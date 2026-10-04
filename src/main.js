@@ -1,6 +1,6 @@
 import './style.css'
 import RAPIER from '@dimforge/rapier3d-compat'
-import { FURNITURE, ROOMS, STREET_PIECES, activeHouse, createState, reduce, streetReady } from './logic.js'
+import { FURNITURE, ROOMS, STREET_PIECES, activeHouse, advanceFight, createState, fightReadout, reduce, streetReady, withFight } from './logic.js'
 import { createWorld } from './world.js'
 
 const app = document.querySelector('#app')
@@ -24,8 +24,12 @@ app.innerHTML = `
       <button type="button" id="walk">Hold to walk</button>
     </div>
     <button type="button" id="place">Place here</button>
-    <button type="button" class="hidden" id="grow">Add sidewalk and street</button>
-    <button type="button" id="strike" class="hidden">Strike</button>
+    <button type="button" class="hidden" id="grow">Step outside</button>
+    <div class="moves hidden" id="moves">
+      <button type="button" id="punch">Punch</button>
+      <button type="button" id="kick">Kick</button>
+      <button type="button" id="block">Block</button>
+    </div>
     <div class="cards hidden" id="next-houses"></div>
   </section>
   <div class="stick hidden" id="stick" aria-label="Move">
@@ -48,7 +52,10 @@ const catalog = document.querySelector('#catalog')
 const again = document.querySelector('#again')
 const place = document.querySelector('#place')
 const grow = document.querySelector('#grow')
-const strike = document.querySelector('#strike')
+const moves = document.querySelector('#moves')
+const punch = document.querySelector('#punch')
+const kick = document.querySelector('#kick')
+const block = document.querySelector('#block')
 const crosshair = document.querySelector('#crosshair')
 const move = document.querySelector('.move')
 const stick = document.querySelector('#stick')
@@ -60,9 +67,11 @@ let state = createState()
 let selected = 'lamp'
 let streetKind = 'bike'
 let prevScreen = ''
-let fightSerial = 0
-let fightRoundWatch = 0
 let lookDrag = null
+let punchEdge = false
+let kickEdge = false
+let blockHeld = false
+let fightEndAt = 0
 
 houseCards.innerHTML = Object.entries(ROOMS)
   .map(
@@ -85,13 +94,13 @@ function paint() {
   const interior = state.screen === 'decorate' || state.screen === 'fight' || state.screen === 'kept'
   sheet.classList.toggle('hidden', interior || state.screen === 'street')
   dock.classList.toggle('hidden', !interior && state.screen !== 'street')
-  crosshair.classList.toggle('hidden', state.screen !== 'decorate' && state.screen !== 'street')
+  crosshair.classList.toggle('hidden', state.screen !== 'decorate' && state.screen !== 'street' && state.screen !== 'fight')
   again.classList.toggle('hidden', state.screen !== 'rebuild')
   houseCards.classList.toggle('hidden', state.screen !== 'pick')
   grow.classList.toggle('hidden', state.screen !== 'kept')
-  strike.classList.toggle('hidden', state.screen !== 'fight')
+  moves.classList.toggle('hidden', state.screen !== 'fight')
   place.classList.toggle('hidden', state.screen !== 'decorate' && state.screen !== 'street')
-  const walking = state.screen === 'decorate' || state.screen === 'kept' || state.screen === 'street'
+  const walking = state.screen === 'decorate' || state.screen === 'kept' || state.screen === 'street' || state.screen === 'fight'
   move.classList.toggle('hidden', !walking)
   stick.classList.toggle('hidden', !walking)
   nextHouses.classList.toggle('hidden', state.screen !== 'street')
@@ -100,7 +109,7 @@ function paint() {
   if (state.screen === 'pick') {
     where.textContent = 'East Nashville'
     sheetTitle.textContent = 'Choose a house'
-    sheetCopy.textContent = 'Walk around inside it and place the furniture. If someone comes for the house, one button punches or kicks.'
+    sheetCopy.textContent = 'Walk around inside it and place the furniture. If Nico shows up, punch, kick, or block.'
   } else if (state.screen === 'rebuild' && house) {
     where.textContent = 'On the street'
     sheetTitle.textContent = 'Back on the street'
@@ -115,24 +124,11 @@ function paint() {
       ? `${house.furniture.length} placed. Drag to look, hold Walk, then Place here. ${left} more.`
       : 'The room is furnished.'
   } else if (state.screen === 'kept' && house) {
-    status.textContent = `${house.name} stays decorated. Walk around, then add the sidewalk and the street.`
+    status.textContent = `${house.name} stays decorated. Turn around and walk out the gold door, or tap Step outside.`
   } else if (state.screen === 'street') {
-    const names = state.street.map((piece) => STREET_PIECES.find((item) => item.id === piece.kind)?.name)
-    status.textContent = names.length === 0
-      ? 'Stand on the sidewalk or in the road. Place here sets it down on that ground.'
-      : streetReady(state)
-        ? `On the block: ${names.join(', ')}. Choose the next house.`
-        : `On the block: ${names.join(', ')}. Add both a sidewalk piece and a street piece.`
+    paintStreet()
   } else if (state.screen === 'fight' && state.fight) {
-    const ready = state.fight.open
-    status.textContent = ready
-      ? state.fight.kind === 'punch'
-        ? 'Nico is open. Punch.'
-        : 'Nico is open. Kick.'
-      : 'Nico from Five Points winds up. Wait for the opening.'
-    strike.textContent = ready ? (state.fight.kind === 'punch' ? 'Punch' : 'Kick') : 'Wait'
-    strike.classList.remove('punch', 'kick', 'wait')
-    strike.classList.add(ready ? state.fight.kind : 'wait')
+    paintFight(world.fightDistance())
   }
 
   for (const button of catalog.querySelectorAll('button')) {
@@ -147,6 +143,40 @@ function paint() {
   }
 }
 
+function paintStreet() {
+  const names = state.street.map((piece) => STREET_PIECES.find((item) => item.id === piece.kind)?.name)
+  const drop = world.dropPoint()
+  const piece = STREET_PIECES.find((item) => item.id === streetKind)
+  place.disabled = !drop.ok
+  if (!drop.ok && piece) {
+    status.textContent = drop.reason === 'crowded'
+      ? 'Too close to another piece. Take a step, then Place here.'
+      : piece.lane === 'sidewalk'
+        ? `${piece.name} sits on the sidewalk. Walk onto it, then Place here.`
+        : `${piece.name} sits in the road. Walk into it, then Place here.`
+    return
+  }
+  place.disabled = false
+  status.textContent = names.length === 0
+    ? 'Walk onto the sidewalk or into the road. Place here bloops it at your feet.'
+    : streetReady(state)
+      ? `On the block: ${names.join(', ')}. Choose the next house.`
+      : `On the block: ${names.join(', ')}. Add both a sidewalk piece and a street piece.`
+}
+
+function paintFight(distance) {
+  if (!state.fight) return
+  const read = fightReadout(state.fight, distance)
+  status.textContent = `${read.score}. ${read.line}`
+  crosshair.classList.remove('punch', 'kick', 'warn')
+  if (state.fight.nicoPhase === 'windup' || state.fight.nicoPhase === 'strike') crosshair.classList.add('warn')
+  else if (distance <= 1.42) crosshair.classList.add('punch')
+  else if (distance <= 2.12) crosshair.classList.add('kick')
+  const busy = state.fight.playerMove === 'punch' || state.fight.playerMove === 'kick' || state.fight.playerMove === 'hurt'
+  punch.disabled = busy
+  kick.disabled = busy
+}
+
 function syncWorld() {
   const interior = state.screen === 'decorate' || state.screen === 'fight' || state.screen === 'kept'
   const reset = state.screen === 'decorate' && prevScreen !== 'decorate'
@@ -159,64 +189,36 @@ function syncWorld() {
 }
 
 function afterChange() {
-  const previous = prevScreen
   paint()
   syncWorld()
   prevScreen = state.screen
-  if (state.screen === 'fight' && state.fight && fightRoundWatch !== state.fight.round) {
-    beginRound()
-  } else if (state.screen !== 'fight') {
-    fightSerial += 1
-    fightRoundWatch = 0
-    world.mood = 'idle'
+  if (state.screen !== 'fight') {
+    fightEndAt = 0
+    world.duel = null
+    world.finisher = null
   }
-  if (previous === state.screen && state.screen === 'fight') {
-    /* round advanced via beginRound */
-  }
-}
-
-function beginRound() {
-  if (!state.fight) return
-  fightRoundWatch = state.fight.round
-  const token = ++fightSerial
-  const round = state.fight.round
-  world.mood = 'windup'
-  paint()
-  window.setTimeout(() => {
-    if (token !== fightSerial) return
-    if (state.screen !== 'fight' || state.fight?.round !== round) return
-    state = reduce(state, 'open-window')
-    world.mood = 'open'
-    paint()
-    window.setTimeout(() => {
-      if (token !== fightSerial) return
-      if (state.screen !== 'fight' || !state.fight?.open || state.fight.round !== round) return
-      state = reduce(state, 'whiff')
-      world.mood = 'idle'
-      afterChange()
-    }, 4500)
-  }, 650)
 }
 
 function onPlace(spot) {
-  const point = spot || world.placePoint()
   if (state.screen === 'decorate') {
+    const point = spot || world.placePoint()
+    const before = state.draft?.furniture.length || 0
     state = reduce(state, 'place', { kind: selected, ...point })
+    if ((state.draft?.furniture.length || 0) > before || state.screen === 'fight') bloop()
   } else if (state.screen === 'street') {
-    state = reduce(state, 'place-street', { kind: streetKind })
+    const drop = world.dropPoint()
+    if (!drop.ok) {
+      paintStreet()
+      return
+    }
+    const before = state.street.length
+    state = reduce(state, 'place-street', { kind: streetKind, x: drop.x, z: drop.z, ax: drop.x, az: drop.z, rot: drop.rot })
+    if (state.street.length === before) {
+      paintStreet()
+      return
+    }
+    bloop()
   } else return
-  afterChange()
-}
-
-function onStrike() {
-  if (state.screen !== 'fight' || !state.fight) return
-  const kind = state.fight.kind
-  const open = state.fight.open
-  fightSerial += 1
-  state = reduce(state, 'strike')
-  if (open) world.playStrike(kind)
-  world.mood = open ? 'hit' : 'idle'
-  fightRoundWatch = 0
   afterChange()
 }
 
@@ -235,10 +237,11 @@ app.addEventListener('click', (event) => {
     return
   }
   if (event.target.closest('#place')) onPlace()
-  if (event.target.closest('#strike')) onStrike()
   if (event.target.closest('#grow')) {
+    const index = Math.max(0, state.kept.findIndex((house) => house.uid === state.focusId))
     state = reduce(state, 'to-street')
     afterChange()
+    world.spawnOutside(index)
   }
   if (event.target.closest('#again')) {
     state = reduce(state, 'decorate-again')
@@ -246,7 +249,7 @@ app.addEventListener('click', (event) => {
   }
 })
 
-const canLook = () => state.screen === 'decorate' || state.screen === 'kept' || state.screen === 'street'
+const canLook = () => state.screen === 'decorate' || state.screen === 'kept' || state.screen === 'street' || state.screen === 'fight'
 let lockClick = false
 
 canvas.addEventListener('pointerdown', (event) => {
@@ -337,25 +340,135 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 'ArrowRight') input.lookX -= 0.12
   if (event.key === ' ') {
     event.preventDefault()
-    if (state.screen === 'fight') onStrike()
+    if (state.screen === 'fight') punchEdge = true
     else onPlace()
+  }
+  if (event.key === 'j' || event.key === 'J') punchEdge = true
+  if (event.key === 'k' || event.key === 'K') kickEdge = true
+  if (event.key === 'l' || event.key === 'L') {
+    blockHeld = true
+    block.setAttribute('aria-pressed', 'true')
   }
 })
 window.addEventListener('keyup', (event) => {
   if (event.key === 'w' || event.key === 'ArrowUp' || event.key === 's' || event.key === 'ArrowDown') input.forward = 0
   if (event.key === 'a' || event.key === 'd') input.strafe = 0
+  if (event.key === 'l' || event.key === 'L') {
+    blockHeld = false
+    block.setAttribute('aria-pressed', 'false')
+  }
 })
 
 new ResizeObserver(() => world.resize()).observe(app)
+
+punch.addEventListener('pointerdown', (event) => {
+  event.preventDefault()
+  punchEdge = true
+})
+kick.addEventListener('pointerdown', (event) => {
+  event.preventDefault()
+  kickEdge = true
+})
+function holdBlock(event) {
+  event.preventDefault()
+  block.setPointerCapture?.(event.pointerId)
+  blockHeld = true
+  block.setAttribute('aria-pressed', 'true')
+}
+function releaseBlock() {
+  blockHeld = false
+  block.setAttribute('aria-pressed', 'false')
+}
+block.addEventListener('pointerdown', holdBlock)
+block.addEventListener('pointerup', releaseBlock)
+block.addEventListener('pointercancel', releaseBlock)
+block.addEventListener('lostpointercapture', releaseBlock)
+
+let audioCtx = null
+function audio() {
+  audioCtx = audioCtx || new AudioContext()
+  if (audioCtx.state === 'suspended') audioCtx.resume()
+  return audioCtx
+}
+function tone(freq, dur, type, gain, slide = 0) {
+  const ctx = audio()
+  const t = ctx.currentTime
+  const osc = ctx.createOscillator()
+  const amp = ctx.createGain()
+  osc.type = type
+  osc.frequency.setValueAtTime(freq, t)
+  if (slide) osc.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), t + dur)
+  amp.gain.setValueAtTime(gain, t)
+  amp.gain.exponentialRampToValueAtTime(0.001, t + dur)
+  osc.connect(amp).connect(ctx.destination)
+  osc.start(t)
+  osc.stop(t + dur + 0.02)
+}
+function bloop() {
+  tone(520, 0.09, 'sine', 0.06, -220)
+  window.setTimeout(() => tone(340, 0.12, 'sine', 0.045, -80), 60)
+}
+function thump() { tone(160, 0.09, 'square', 0.04, -40) }
+function clack() { tone(880, 0.05, 'triangle', 0.04) }
+function swish() { tone(420, 0.06, 'sine', 0.025, 180) }
+app.addEventListener('pointerdown', () => audio().resume?.(), { once: false })
 
 let last = performance.now()
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000)
   last = now
+  if (state.screen === 'fight' && state.fight) {
+    if (!state.fight.over) {
+      const step = advanceFight(state.fight, dt, {
+        distance: world.fightDistance(),
+        punch: punchEdge,
+        kick: kickEdge,
+        block: blockHeld,
+      })
+      punchEdge = false
+      kickEdge = false
+      state = { ...state, fight: step.fight }
+      for (const event of step.events) {
+        if (event === 'hurt') {
+          world.react('hurt')
+          app.classList.add('bonk')
+          window.setTimeout(() => app.classList.remove('bonk'), 180)
+          thump()
+        } else if (event === 'counter' || event === 'hit') {
+          world.react(event)
+          thump()
+        } else if (event === 'blocked' || event === 'clang') {
+          world.react(event)
+          clack()
+        } else if (event === 'whiff' || event === 'nico-whiff' || event === 'swing-punch' || event === 'swing-kick') swish()
+        else if (event === 'telegraph') tone(240, 0.08, 'triangle', 0.03, 80)
+      }
+      if (step.done) fightEndAt = performance.now() + 520
+    }
+    world.duel = state.fight
+    world.finisher = state.fight.over
+    paintFight(world.fightDistance())
+    if (state.fight.over && fightEndAt && performance.now() >= fightEndAt) {
+      fightEndAt = 0
+      state = withFight(state, state.fight)
+      afterChange()
+    }
+  } else {
+    world.duel = null
+    world.finisher = null
+  }
   world.ghostKind = state.screen === 'decorate' ? selected : null
+  world.pieceKind = state.screen === 'street' ? streetKind : null
   world.lane = STREET_PIECES.find((item) => item.id === streetKind)?.lane || 'sidewalk'
-  const moving = state.screen === 'decorate' || state.screen === 'kept' || state.screen === 'street'
+  const moving = state.screen === 'decorate' || state.screen === 'kept' || state.screen === 'street' || state.screen === 'fight'
   world.update(dt, moving ? input : { forward: 0, strafe: 0, lookX: 0, lookY: 0 })
+  if (world.consumeExit() && state.screen === 'kept') {
+    const index = Math.max(0, state.kept.findIndex((house) => house.uid === state.focusId))
+    state = reduce(state, 'to-street')
+    afterChange()
+    world.spawnOutside(index)
+  }
+  if (state.screen === 'street') paintStreet()
   requestAnimationFrame(frame)
 }
 

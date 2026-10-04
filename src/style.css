@@ -128,7 +128,7 @@ button:disabled { opacity: 0.55; }
 .cards { flex-direction: column; }
 .dock .cards { flex-direction: row; }
 .dock .cards button { flex: 1; text-align: center; padding: 8px 6px; }
-.cards button, .sheet .primary, #strike, #place, #grow, #again {
+.cards button, .sheet .primary, #place, #grow, #again {
   width: 100%;
   text-align: left;
 }
@@ -161,15 +161,33 @@ button:disabled { opacity: 0.55; }
   background: var(--gold);
 }
 
-#strike {
-  min-height: 64px;
-  font-size: 22px;
+.moves { display: flex; gap: 8px; }
+.moves button {
+  flex: 1;
   text-align: center;
-  background: var(--gold);
+  min-height: 62px;
+  font-size: 18px;
 }
-#strike.punch { background: #f2c14e; }
-#strike.kick { background: #e07a5f; color: #1b1612; }
-#strike.wait { background: #d9d0c3; }
+#punch { background: var(--gold); }
+#kick { background: #e07a5f; }
+#block { background: #d7e6ef; }
+#block[aria-pressed="true"] { background: #7eb6d9; }
+.crosshair.kick { border-color: #f2c14e; }
+.crosshair.punch { border-color: #7dcea0; }
+.crosshair.warn {
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-color: #e07a5f;
+}
+#app.bonk::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: radial-gradient(circle, transparent 46%, rgba(242, 193, 78, 0.42));
+}
 
 .primary {
   text-align: center;

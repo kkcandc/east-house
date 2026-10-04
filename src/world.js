@@ -3,7 +3,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
-import { BLOCK, ROOMS, activeHouse, houseFootprint, placeOnLane } from './logic.js'
+import { BLOCK, ROOMS, activeHouse, bloopSpot, houseFootprint } from './logic.js'
 
 const EYE = 1.62
 
@@ -69,10 +69,12 @@ export function createWorld(canvas, RAPIER) {
   const glove = new THREE.Mesh(new THREE.SphereGeometry(0.075, 16, 12), gloveMat)
   glove.castShadow = true
   glove.visible = false
+  const gloveL = glove.clone()
+  gloveL.visible = false
   const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.3), shoeMat)
   shoe.castShadow = true
   shoe.visible = false
-  camera.add(glove, shoe)
+  camera.add(glove, gloveL, shoe)
   scene.add(camera)
 
   const wood = woodTexture()
@@ -100,6 +102,13 @@ export function createWorld(canvas, RAPIER) {
     streetItems: [],
     houseCount: 0,
     lane: 'sidewalk',
+    pieceKind: null,
+    duel: null,
+    finisher: null,
+    allowExit: false,
+    doorZ: 0,
+    exited: false,
+    shake: 0,
   }
 
   let sim = null
@@ -141,7 +150,13 @@ export function createWorld(canvas, RAPIER) {
     addFixed(-w / 2, h / 2, 0, 0.1, h / 2, d / 2)
     addFixed(w / 2, h / 2, 0, 0.1, h / 2, d / 2)
     addFixed(0, h / 2, -d / 2, w / 2, h / 2, 0.1)
-    addFixed(0, h / 2, d / 2, w / 2, h / 2, 0.1)
+    const doorW = 0.96
+    const doorH = 2.08
+    const side = (w - doorW) / 2
+    const z = d / 2
+    addFixed(-w / 2 + side / 2, h / 2, z, side / 2, h / 2, 0.1)
+    addFixed(w / 2 - side / 2, h / 2, z, side / 2, h / 2, 0.1)
+    addFixed(0, doorH + (h - doorH) / 2, z, doorW / 2, (h - doorH) / 2, 0.1)
   }
 
   function addLoose(mesh, kind, id, settled) {
@@ -282,7 +297,8 @@ export function createWorld(canvas, RAPIER) {
     clear(roomGroup)
     const spec = ROOMS[house.style]
     const { w, d, h } = spec
-    state3.bounds = { minX: -w / 2, maxX: w / 2, minZ: -d / 2, maxZ: d / 2 }
+    state3.doorZ = d / 2
+    state3.bounds = { minX: -w / 2, maxX: w / 2, minZ: -d / 2, maxZ: d / 2 - 0.28 }
     const wall = mat(spec.wall, { roughness: 0.92 })
     const trim = mat(spec.trim, { roughness: 0.55 })
     const floor = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, d), mat('#c8956a', { map: wood, roughness: 0.78 }))
@@ -313,6 +329,10 @@ export function createWorld(canvas, RAPIER) {
     tree.add(trunk, crown)
     tree.position.set(0.4, 0, -d / 2 - 1.3)
     roomGroup.add(tree)
+    const threshold = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.02, 0.55), mat('#f2c14e'))
+    threshold.position.set(0, 0.02, d / 2 - 0.42)
+    threshold.receiveShadow = true
+    roomGroup.add(threshold)
 
     const bulb = new THREE.PointLight('#ffe0b8', 1.6, 12)
     bulb.position.set(0, h - 0.3, 0)
@@ -410,6 +430,32 @@ export function createWorld(canvas, RAPIER) {
     }
   }
 
+  const streetGhost = new THREE.Group()
+  scene.add(streetGhost)
+  const popCanvas = document.createElement('canvas')
+  popCanvas.width = 256
+  popCanvas.height = 128
+  const popCtx = popCanvas.getContext('2d')
+  const popMap = new THREE.CanvasTexture(popCanvas)
+  popMap.colorSpace = THREE.SRGBColorSpace
+  const popSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: popMap, transparent: true, depthTest: false }))
+  popSprite.scale.set(0.95, 0.48, 1)
+  popSprite.visible = false
+  scene.add(popSprite)
+  let popLife = 0
+
+  function showPop(text) {
+    popCtx.clearRect(0, 0, 256, 128)
+    popCtx.fillStyle = '#f2c14e'
+    popCtx.font = '700 68px Georgia, serif'
+    popCtx.textAlign = 'center'
+    popCtx.textBaseline = 'middle'
+    popCtx.fillText(text, 128, 64)
+    popMap.needsUpdate = true
+    popSprite.visible = true
+    popLife = 0.5
+  }
+
   const marker = new THREE.Mesh(
     new THREE.RingGeometry(0.32, 0.48, 28),
     new THREE.MeshBasicMaterial({ color: '#f2c14e', side: THREE.DoubleSide, transparent: true, opacity: 0.9 }),
@@ -428,10 +474,215 @@ export function createWorld(canvas, RAPIER) {
   }
 
   function placePoint() {
-    const aim = aimPoint()
-    if (state3.mode !== 'street') return aim
-    const spot = placeOnLane(state3.lane, aim.x, aim.z, state3.streetItems, state3.houseCount)
-    return { x: spot.x, z: spot.z, rot: state3.yaw }
+    return aimPoint()
+  }
+
+  function dropPoint() {
+    const dir = forward()
+    const spot = bloopSpot(
+      state3.lane,
+      state3.px,
+      state3.pz,
+      state3.px + dir.x * 0.95,
+      state3.pz + dir.z * 0.95,
+      state3.streetItems,
+      state3.houseCount,
+    )
+    return { ...spot, rot: state3.yaw }
+  }
+
+  function fightDistance() {
+    if (!state3.nico) return 9
+    return Math.hypot(state3.px - state3.nico.position.x, state3.pz - state3.nico.position.z)
+  }
+
+  function separateFromNico() {
+    if (!state3.nico?.visible) return
+    const dx = state3.px - state3.nico.position.x
+    const dz = state3.pz - state3.nico.position.z
+    const dist = Math.hypot(dx, dz) || 0.001
+    if (dist >= 0.72) return
+    state3.px = state3.nico.position.x + (dx / dist) * 0.72
+    state3.pz = state3.nico.position.z + (dz / dist) * 0.72
+    sim?.body.setTranslation({ x: state3.px, y: 0.58, z: state3.pz }, true)
+  }
+
+  function moveNico(dt, duel) {
+    const nico = state3.nico
+    let nx = nico.position.x
+    let nz = nico.position.z
+    const dx = state3.px - nx
+    const dz = state3.pz - nz
+    const dist = Math.hypot(dx, dz) || 0.001
+    const ux = dx / dist
+    const uz = dz / dist
+    const phase = state3.finisher === 'win' ? 'bow' : duel.nicoPhase
+    let speed = 0
+    if (phase === 'approach') speed = dist > 1.72 ? 1.45 : 0
+    else if (phase === 'guard') speed = dist > 1.9 ? 0.65 : dist < 1.22 ? -0.5 : 0
+    else if (phase === 'windup') {
+      speed = duel.nicoAttack === 'kick'
+        ? (dist > 1.95 ? 0.4 : dist < 1.65 ? -0.45 : 0)
+        : (dist > 1.38 ? 0.6 : 0)
+    } else if (phase === 'recover' || phase === 'stagger' || phase === 'bow') speed = dist < 2.15 ? -1.15 : 0
+    let sx = 0
+    let sz = 0
+    if (phase === 'guard') {
+      sx = -uz * Math.sin(state3.time * 1.4) * 0.45
+      sz = ux * Math.sin(state3.time * 1.4) * 0.45
+    }
+    nx += (ux * speed + sx) * dt
+    nz += (uz * speed + sz) * dt
+    for (const mesh of loose) {
+      const ox = nx - mesh.position.x
+      const oz = nz - mesh.position.z
+      const od = Math.hypot(ox, oz)
+      if (od < 0.72 && od > 0.001) {
+        nx += (ox / od) * (0.72 - od)
+        nz += (oz / od) * (0.72 - od)
+      }
+    }
+    if (state3.bounds) {
+      nx = clamp(nx, state3.bounds.minX + 0.4, state3.bounds.maxX - 0.4)
+      nz = clamp(nz, state3.bounds.minZ + 0.4, Math.min(state3.bounds.maxZ, state3.doorZ - 0.35))
+    }
+    const pdx = nx - state3.px
+    const pdz = nz - state3.pz
+    const pd = Math.hypot(pdx, pdz) || 0.001
+    if (pd < 0.78) {
+      nx = state3.px + (pdx / pd) * 0.78
+      nz = state3.pz + (pdz / pd) * 0.78
+    }
+    nico.position.x = nx
+    nico.position.z = nz
+    nico.rotation.y = Math.atan2(state3.px - nx, state3.pz - nz)
+  }
+
+  function poseNico(duel) {
+    const nico = state3.nico
+    const parts = nico.userData.parts
+    if (!parts) return
+    const phase = state3.finisher === 'win' ? 'bow' : state3.finisher === 'lose' ? 'stagger' : duel.nicoPhase
+    const attack = duel.nicoAttack
+    const wind = Math.min(1, duel.phaseT / 0.28)
+    let armLx = 0.45
+    let armLz = 1.05
+    let armRx = 0.45
+    let armRz = -1.05
+    let legRx = 0
+    let lean = 0
+    if (phase === 'approach') {
+      armLx = 0.4
+      armRx = 0.4
+      lean = Math.sin(state3.time * 8) * 0.04
+    } else if (phase === 'windup' && attack === 'kick') {
+      legRx = -1.2 * wind
+      lean = -0.1 * wind
+    } else if (phase === 'windup') {
+      armRx = -1.35 * wind
+      armRz = -0.35
+      lean = -0.16 * wind
+    } else if (phase === 'strike' && attack === 'kick') {
+      legRx = -1.2 + 2.25 * Math.min(1, duel.phaseT / 0.12)
+      lean = 0.1
+    } else if (phase === 'strike') {
+      armRx = -1.35 + 2.55 * Math.min(1, duel.phaseT / 0.1)
+      armRz = -0.15
+      lean = 0.14
+    } else if (phase === 'recover') {
+      armLx = 0.2
+      armRx = 0.25
+      armLz = 0.35
+      armRz = -0.35
+      lean = 0.1
+    } else if (phase === 'stagger') {
+      armLx = -0.5
+      armRx = -0.5
+      armLz = 0.2
+      armRz = -0.2
+      lean = -0.38
+    } else if (phase === 'bow') {
+      armLx = 0.9
+      armRx = 0.9
+      armLz = 0.15
+      armRz = -0.15
+      lean = 0.75
+    }
+    parts.armL.rotation.x = armLx
+    parts.armL.rotation.z = armLz
+    parts.armR.rotation.x = armRx
+    parts.armR.rotation.z = armRz
+    parts.legR.rotation.x = legRx
+    parts.body.rotation.x = lean
+    parts.crown.rotation.z = (phase === 'stagger' ? 0.5 : phase === 'windup' ? 0.2 : 0) + Math.sin(state3.time * 2.5) * 0.05
+    const open = phase === 'recover'
+    parts.ring.material.color.set(phase === 'windup' ? '#f2c14e' : open ? '#7dcea0' : '#241c16')
+    parts.ring.material.opacity = phase === 'windup' || open ? 0.9 : 0.28
+    nico.position.y = Math.abs(Math.sin(state3.time * (phase === 'approach' ? 8 : 3))) * 0.025
+  }
+
+  function poseHands(duel) {
+    const move = state3.finisher ? 'ready' : duel.playerMove
+    const t = duel.moveT
+    glove.visible = false
+    gloveL.visible = false
+    shoe.visible = false
+    if (move === 'punch') {
+      glove.visible = true
+      const extend = t < 0.1 ? -0.12 : Math.sin(Math.min(1, (t - 0.1) / 0.16) * Math.PI)
+      glove.position.set(0.18, -0.14, -0.32 - Math.max(0, extend) * 0.82)
+    } else if (move === 'kick') {
+      shoe.visible = true
+      const extend = t < 0.18 ? 0.02 : Math.sin(Math.min(1, (t - 0.18) / 0.18) * Math.PI)
+      shoe.position.set(0.06, -0.36 + extend * 0.12, -0.32 - extend * 0.95)
+    } else if (move === 'block') {
+      glove.visible = true
+      gloveL.visible = true
+      const bob = Math.sin(state3.time * 16) * 0.012
+      glove.position.set(0.14, -0.06 + bob, -0.26)
+      gloveL.position.set(-0.14, -0.06 + bob, -0.26)
+    } else if (move === 'hurt') {
+      glove.visible = true
+      gloveL.visible = true
+      glove.position.set(0.2, -0.34, -0.16)
+      gloveL.position.set(-0.16, -0.3, -0.14)
+    }
+  }
+
+  function syncStreetGhost(kind, drop) {
+    if (!kind) {
+      streetGhost.visible = false
+      return
+    }
+    if (streetGhost.userData.kind !== kind) {
+      clear(streetGhost)
+      const mesh = streetProp(kind)
+      mesh.traverse((obj) => {
+        if (!obj.isMesh) return
+        obj.material = obj.material.clone()
+        obj.material.transparent = true
+        obj.material.opacity = 0.45
+        obj.castShadow = false
+      })
+      streetGhost.add(mesh)
+      streetGhost.userData.kind = kind
+    }
+    streetGhost.position.set(drop.x, 0.02, drop.z)
+    streetGhost.rotation.y = drop.rot || 0
+    streetGhost.visible = true
+    const tint = drop.ok ? 0.45 : 0.28
+    streetGhost.traverse((obj) => {
+      if (obj.isMesh && obj.material) obj.material.opacity = tint
+    })
+  }
+
+  function spawnAt(x, z, yaw, pitch) {
+    state3.px = x
+    state3.pz = z
+    state3.yaw = yaw
+    state3.pitch = pitch
+    sim?.body.setTranslation({ x, y: 0.58, z }, true)
+    applyCamera()
   }
 
   function rayPlace(clientX, clientY) {
@@ -458,8 +709,8 @@ export function createWorld(canvas, RAPIER) {
     if (!state3.nico || !state3.bounds) return
     const dir = forward()
     const { minX, maxX, minZ, maxZ } = state3.bounds
-    const x = clamp(state3.px + dir.x * 2.2, minX + 0.45, maxX - 0.45)
-    const z = clamp(state3.pz + dir.z * 2.2, minZ + 0.45, maxZ - 0.45)
+    const x = clamp(state3.px + dir.x * 2.55, minX + 0.5, maxX - 0.5)
+    const z = clamp(state3.pz + dir.z * 2.55, minZ + 0.5, maxZ - 0.5)
     state3.nico.position.set(x, 0, z)
     const dx = x - state3.px
     const dz = z - state3.pz
@@ -474,15 +725,27 @@ export function createWorld(canvas, RAPIER) {
       const angle = state3.time * 0.18
       camera.position.set(Math.sin(angle) * 1.4 + 1.2, 2.5, 5.2)
       camera.lookAt(0.6, 1.1, -1)
+      marker.visible = false
+      streetGhost.visible = false
       composer.render()
       return
     }
 
     if (state3.mode !== 'fight-frozen') {
+      const looked = Math.abs(input.lookX || 0) > 0.0001 || Math.abs(input.lookY || 0) > 0.0001
       state3.yaw -= input.lookX || 0
       state3.pitch = clamp(state3.pitch - (input.lookY || 0), -0.95, 0.55)
       input.lookX = 0
       input.lookY = 0
+      if (state3.nico?.visible && !looked && !state3.finisher) {
+        const dx = state3.nico.position.x - state3.px
+        const dz = state3.nico.position.z - state3.pz
+        const want = Math.atan2(-dx, -dz)
+        let diff = want - state3.yaw
+        while (diff > Math.PI) diff -= Math.PI * 2
+        while (diff < -Math.PI) diff += Math.PI * 2
+        state3.yaw += clamp(diff, -1.5 * dt, 1.5 * dt)
+      }
       const dirVec = forward()
       const rx = -dirVec.z
       const rz = dirVec.x
@@ -495,8 +758,15 @@ export function createWorld(canvas, RAPIER) {
         if (sim) stepSim(dt, wishX, wishZ)
         else tryMove(wishX, wishZ)
       }
+      separateFromNico()
+      if (state3.allowExit && state3.pz > state3.doorZ + 0.02) state3.exited = true
     }
     applyCamera()
+    if (state3.shake > 0) {
+      state3.shake = Math.max(0, state3.shake - dt * 2.4)
+      camera.position.x += Math.sin(state3.time * 58) * 0.035 * state3.shake
+      camera.position.y += Math.cos(state3.time * 46) * 0.02 * state3.shake
+    }
 
     if (state3.ghost) {
       const kind = state3.ghostKind
@@ -525,29 +795,34 @@ export function createWorld(canvas, RAPIER) {
     }
 
     if (state3.mode === 'street') {
-      const spot = placePoint()
+      const spot = dropPoint()
       marker.position.set(spot.x, 0.09, spot.z)
+      marker.material.color.set(spot.ok ? '#7dcea0' : '#e07a5f')
       marker.visible = true
+      syncStreetGhost(state3.pieceKind, spot)
     } else {
       marker.visible = false
+      streetGhost.visible = false
     }
 
-    if (state3.nico) {
-      state3.nico.position.y = Math.sin(state3.time * 2.4) * 0.02
-      const up = state3.mood === 'windup' || state3.mood === 'open'
-      if (state3.arms) {
-        state3.arms.left.rotation.z = up ? 2.1 : 0.25
-        state3.arms.right.rotation.z = up ? -2.1 : -0.25
-      }
-      if (state3.hitT > 0) {
-        state3.hitT -= dt
-        state3.nico.rotation.z = Math.sin(state3.hitT * 28) * 0.35
-      } else {
-        state3.nico.rotation.z = 0
-      }
+    if (state3.nico?.visible && state3.duel) {
+      moveNico(dt, state3.duel)
+      poseNico(state3.duel)
+      poseHands(state3.duel)
+    } else {
+      glove.visible = false
+      gloveL.visible = false
+      shoe.visible = false
+      if (state3.nico) state3.nico.rotation.x = 0
+    }
+    if (popLife > 0) {
+      popLife -= dt
+      popSprite.position.set(state3.nico?.position.x || state3.px, 2.05 + (0.5 - popLife) * 0.35, state3.nico?.position.z || state3.pz)
+      popSprite.material.opacity = Math.max(0, popLife / 0.5)
+      popSprite.visible = popLife > 0
     }
 
-    if (state3.strike) {
+    if (state3.strike && !state3.duel) {
       state3.strike.t += dt
       const wave = Math.sin(Math.min(1, state3.strike.t / 0.26) * Math.PI)
       glove.visible = state3.strike.kind === 'punch'
@@ -631,7 +906,27 @@ export function createWorld(canvas, RAPIER) {
     nudge,
     faceNico,
     placePoint,
+    dropPoint,
+    fightDistance,
     rayPlace,
+    spawnOutside(index) {
+      const lot = houseFootprint(Math.max(0, index))
+      spawnAt(1.05, lot.z, 0, -0.24)
+    },
+    consumeExit() {
+      const exited = state3.exited
+      state3.exited = false
+      return exited
+    },
+    react(kind) {
+      if (kind === 'hurt') state3.shake = 1
+      if (kind === 'counter' || kind === 'hit') {
+        state3.shake = 0.55
+        showPop(kind === 'counter' ? 'Counter' : 'Tap')
+      }
+      if (kind === 'blocked') showPop('Blocked')
+      if (kind === 'clang') showPop('Covered')
+    },
     sync(game, { reset = false } = {}) {
       const interior = game.screen === 'decorate' || game.screen === 'fight' || game.screen === 'kept'
       if (interior) {
@@ -641,12 +936,18 @@ export function createWorld(canvas, RAPIER) {
         camera.fov = 68
         camera.updateProjectionMatrix()
         if (state3.nico) state3.nico.visible = game.screen === 'fight'
+        state3.allowExit = game.screen === 'kept'
+        if (state3.bounds) {
+          state3.bounds.maxZ = state3.allowExit ? state3.doorZ + 0.85 : state3.doorZ - 0.28
+        }
       } else if (game.screen === 'pick') {
+        state3.allowExit = false
         if (state3.mode !== 'pick') {
           showStreet(game, true)
           state3.mode = 'pick'
         }
       } else {
+        state3.allowExit = false
         showStreet(game, reset || state3.mode === 'interior' || state3.mode === 'pick')
         state3.mode = 'street'
         camera.fov = 68
@@ -658,6 +959,15 @@ export function createWorld(canvas, RAPIER) {
     },
     set lane(value) {
       state3.lane = value
+    },
+    set pieceKind(value) {
+      state3.pieceKind = value
+    },
+    set duel(value) {
+      state3.duel = value
+    },
+    set finisher(value) {
+      state3.finisher = value
     },
     set onRest(fn) {
       api.onRest = fn
@@ -825,34 +1135,54 @@ function addLegs(group, material, spanX, spanZ) {
 
 function makeNico() {
   const group = new THREE.Group()
+  const body = new THREE.Group()
   const skin = mat('#f0c7a4', { roughness: 0.62 })
   const shirt = mat('#3ecfb8', { roughness: 0.4, emissive: '#14685c', emissiveIntensity: 0.45 })
   const pants = mat('#f2c14e', { roughness: 0.55 })
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 16), skin)
   head.position.y = 1.55
-  const crown = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.16, 5), mat('#f2c14e'))
-  crown.position.y = 1.76
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), mat('#241c16'))
+  eye.position.set(-0.05, 1.58, 0.13)
+  const eyeR = eye.clone()
+  eyeR.position.x = 0.05
+  const crown = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.18, 5), mat('#f2c14e', { emissive: '#f2c14e', emissiveIntensity: 0.35 }))
+  crown.position.y = 1.78
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.34, 4, 10), shirt)
   torso.position.y = 1.16
   const hip = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.16, 0.16), pants)
   hip.position.y = 0.86
-  for (const x of [-0.08, 0.08]) {
-    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.42, 4, 8), pants)
-    leg.position.set(x, 0.46, 0)
-    group.add(leg)
-  }
   const armL = limb(shirt, -0.24)
   const armR = limb(shirt, 0.24)
-  group.add(head, crown, torso, hip, armL, armR)
+  const legL = legPivot(pants, -0.08)
+  const legR = legPivot(pants, 0.08)
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.34, 0.48, 28),
+    new THREE.MeshBasicMaterial({ color: '#241c16', transparent: true, opacity: 0.28, side: THREE.DoubleSide }),
+  )
+  ring.rotation.x = -Math.PI / 2
+  ring.position.y = 0.03
+  body.add(head, eye, eyeR, crown, torso, hip, armL, armR, legL, legR)
+  group.add(body, ring)
   group.traverse((obj) => {
     if (obj.isMesh) {
       obj.castShadow = true
       obj.receiveShadow = true
     }
   })
+  ring.castShadow = false
+  group.userData.parts = { body, armL, armR, legL, legR, crown, ring }
   group.userData.arms = { left: armL, right: armR }
-  group.scale.setScalar(1.25)
+  group.scale.setScalar(1.2)
   return group
+}
+
+function legPivot(material, x) {
+  const pivot = new THREE.Group()
+  pivot.position.set(x, 0.78, 0)
+  const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.34, 4, 8), material)
+  mesh.position.y = -0.26
+  pivot.add(mesh)
+  return pivot
 }
 
 function limb(material, x) {
