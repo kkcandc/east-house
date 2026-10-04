@@ -148,12 +148,13 @@ function paintStreet() {
   const drop = world.dropPoint()
   const piece = STREET_PIECES.find((item) => item.id === streetKind)
   place.disabled = !drop.ok
+  const placed = names.length ? `On the block: ${names.join(', ')}. ` : ''
   if (!drop.ok && piece) {
-    status.textContent = drop.reason === 'crowded'
-      ? 'Too close to another piece. Take a step, then Place here.'
+    status.textContent = placed + (drop.reason === 'crowded'
+      ? 'Take a step so the next one has room.'
       : piece.lane === 'sidewalk'
         ? `${piece.name} sits on the sidewalk. Walk onto it, then Place here.`
-        : `${piece.name} sits in the road. Walk into it, then Place here.`
+        : `${piece.name} sits in the road. Walk into it, then Place here.`)
     return
   }
   place.disabled = false
@@ -286,11 +287,14 @@ canvas.addEventListener('pointercancel', () => {
   lockClick = false
 })
 
+function tryCapture(el, event) {
+  try { el.setPointerCapture?.(event.pointerId) } catch { /* the press still counts */ }
+}
 function pressWalk(event) {
   if (!canLook()) return
-  walk.setPointerCapture?.(event.pointerId)
   input.forward = 1
   walk.setAttribute('aria-pressed', 'true')
+  tryCapture(walk, event)
 }
 function releaseWalk() {
   if (stickPointer == null) input.forward = 0
@@ -312,7 +316,7 @@ function moveStick(event) {
 }
 stick.addEventListener('pointerdown', (event) => {
   if (!canLook()) return
-  stick.setPointerCapture(event.pointerId)
+  tryCapture(stick, event)
   stickPointer = event.pointerId
   stickOrigin = { x: event.clientX, y: event.clientY }
   moveStick(event)
@@ -371,9 +375,9 @@ kick.addEventListener('pointerdown', (event) => {
 })
 function holdBlock(event) {
   event.preventDefault()
-  block.setPointerCapture?.(event.pointerId)
   blockHeld = true
   block.setAttribute('aria-pressed', 'true')
+  tryCapture(block, event)
 }
 function releaseBlock() {
   blockHeld = false
