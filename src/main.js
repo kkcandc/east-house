@@ -275,14 +275,8 @@ document.addEventListener('mousemove', (event) => {
 })
 canvas.addEventListener('pointerup', (event) => {
   if (!lookDrag || lookDrag.id !== event.pointerId) return
-  const tap = !lookDrag.moved && !lockClick
   lookDrag = null
   lockClick = false
-  if (!tap) return
-  if (state.screen === 'decorate') {
-    const hit = world.rayPlace(event.clientX, event.clientY)
-    if (hit) onPlace(hit)
-  } else if (state.screen === 'street') onPlace()
 })
 canvas.addEventListener('pointercancel', () => {
   lookDrag = null
