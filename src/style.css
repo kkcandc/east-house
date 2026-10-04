@@ -179,18 +179,25 @@ h1 {
 .toys i:nth-child(4) { background: #6b5b95; }
 
 .mural {
-  display: flex;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
-  min-height: 58px;
+  min-height: 92px;
   background: #2a2118;
+  align-items: end;
 }
-.swatch { display: block; flex: 1; border-radius: 8px 8px 2px 2px; border: 2px solid #fff8ea; }
-.s1 { height: 28px; background: #ee6d8a; }
-.s2 { height: 40px; background: var(--gold); border-radius: 40% 40% 4px 4px; }
-.s3 { height: 22px; background: var(--teal); }
-.s4 { height: 34px; background: #7d6bb5; }
-.mural .tag { color: #fff8ea; position: absolute; left: 8px; bottom: 4px; }
+.mural .tag {
+  grid-column: 1 / -1;
+  position: static;
+  color: #fff8ea;
+  font-size: 16px;
+  letter-spacing: 0.04em;
+}
+.swatch { display: block; border-radius: 10px 10px 3px 3px; border: 2px solid #fff8ea; }
+.s1 { height: 34px; background: #ee6d8a; }
+.s2 { height: 48px; background: var(--gold); border-radius: 40% 40% 4px 4px; }
+.s3 { height: 28px; background: #3aa7a3; }
+.s4 { height: 42px; background: #7d6bb5; }
 
 .sidewalk {
   display: flex;

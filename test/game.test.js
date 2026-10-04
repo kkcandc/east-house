@@ -135,6 +135,15 @@ test('an earlier house stays if the next one is lost', () => {
   assert.match(render(state), /Gallatin Skinny already on the block/)
 })
 
+test('the opening serve misses a racket left in the center', () => {
+  let rally = createRally()
+  for (let i = 0; i < 500 && rally.hits === 0 && rally.misses === 0; i += 1) {
+    rally = stepRally(rally, 16, 0.5)
+  }
+  assert.equal(rally.hits, 0)
+  assert.ok(rally.misses > 0)
+})
+
 test('a following racket finishes the rally and a parked racket can miss', () => {
   let rally = createRally()
   for (let i = 0; i < 20000 && rally.phase !== 'won'; i += 1) {

@@ -42,11 +42,11 @@ function pocketMap(lot, street = '') {
         <p class="tag">Tabla Rasa Toy Store</p>
       </div>
       <div class="mural" aria-label="Mural wall">
+        <p class="tag">Mural wall</p>
         <span class="swatch s1"></span>
         <span class="swatch s2"></span>
         <span class="swatch s3"></span>
         <span class="swatch s4"></span>
-        <p class="tag">Mural wall</p>
       </div>
     </div>
     <div class="sidewalk" aria-label="Bikes on the sidewalk">

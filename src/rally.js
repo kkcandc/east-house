@@ -1,11 +1,11 @@
 export const RALLY_GOAL = 3
 
-const SPEED = 0.00068
-const RACKET_REACH = 0.11
+const SPEED = 0.00042
+const RACKET_REACH = 0.17
 
 export function createRally() {
-  const aim = 0.26
-  const ballX = 0.58
+  const aim = 0.18
+  const ballX = 0.62
   const ballY = 0.22
   const travel = (0.82 - ballY) / SPEED
   return {
@@ -42,7 +42,7 @@ export function stepRally(rally, dt, targetX) {
 
   if (next.ballVY < 0 && next.ballY <= 0.14) {
     const speed = SPEED + next.hits * 0.000045
-    const aims = [0.24, 0.76, 0.5]
+    const aims = [0.16, 0.84, 0.5]
     const aim = aims[next.hits % aims.length]
     const travel = (0.82 - 0.14) / speed
     next.ballY = 0.14
@@ -68,7 +68,7 @@ export function stepRally(rally, dt, targetX) {
 
   if (next.phase === 'play' && next.ballY > 1.05) {
     const speed = SPEED
-    const aim = next.misses % 2 === 0 ? 0.22 : 0.78
+    const aim = next.misses % 2 === 0 ? 0.16 : 0.84
     const ballX = aim > 0.5 ? 0.35 : 0.65
     const ballY = 0.2
     const travel = (0.82 - ballY) / speed

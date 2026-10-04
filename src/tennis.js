@@ -43,7 +43,7 @@ export function mountTennis({ canvas, status, done, leave, left, right }) {
     dragging = false
   }
   function nudge(dir) {
-    target = clamp(target + dir * 0.16, 0.08, 0.92)
+    target = clamp(target + dir * 0.24, 0.08, 0.92)
   }
   function onLeft(event) {
     event.stopPropagation()
