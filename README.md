@@ -1,10 +1,12 @@
 # East House
 
-A tiny dollhouse game, looked down on, set on a squeezed pocket map of East Nashville.
+A small 3D game set in East Nashville. Walk around inside a house and place the furniture. After three pieces, Nico from Five Points shows up. One button punches or kicks, once the button says so.
 
-Pick one of three houses. Tap the television for a silly hot-chicken guessing show. Tap the tennis court for a short rally with rackets. Then a neighbor knocks and asks for three silly poses. Win, and the house grows a room so you can keep building toward a neighborhood. Miss, and you whimper on the street, then build the house again.
+Win, and that house stays furnished. You pick what goes on the sidewalk and in the street, then choose the next house and decorate it the same way. Each win adds another house and more of the block.
 
-The block includes a Five Points corner, Shelby Park, a mural wall, bikes on the sidewalk, and Tabla Rasa Toy Store.
+Lose, and only the house you were decorating is cleared. You start that room over. Houses you already kept, and the street pieces, stay put.
+
+The block can include Porter Brick, Shelby Shotgun, Gallatin Skinny, a Five Points corner, Shelby Park, a mural wall, sidewalk bikes, and Tabla Rasa Toy Store.
 
 ## Play
 
@@ -13,7 +15,7 @@ npm install
 npm run dev
 ```
 
-Open the local URL. The board is phone-width. Drag on the court, or use the racket buttons. Arrow keys move the racket too.
+Open the local URL. The game is a phone-width column. Turn and walk with the buttons, then tap Place here. Drag on the picture to look around. In the fight, tap the gold button only when it says Punch or Kick.
 
 ## Test
 

@@ -1,105 +1,60 @@
-export const HOUSE_TYPES = [
-  {
-    style: 'brick',
+export const ATTACK_AFTER = 3
+export const HITS_TO_WIN = 3
+export const MISSES_TO_LOSE = 2
+
+export const ROOMS = {
+  brick: {
     name: 'Porter Brick',
-    blurb: 'A low brick square near Porter Road. Flat roof, side door, two rooms side by side.',
+    blurb: 'A wide brick room near Porter Road. Flat ceiling, side door, space to walk.',
+    w: 7,
+    d: 6.2,
+    h: 2.8,
+    wall: '#c46b52',
+    trim: '#6e382c',
+    exterior: '#a65240',
   },
-  {
-    style: 'shotgun',
+  shotgun: {
     name: 'Shelby Shotgun',
-    blurb: 'A long run of rooms in a line. The door sits on the short end, toward the park.',
+    blurb: 'A long room in a line, the far window aimed toward the park.',
+    w: 4.2,
+    d: 10.2,
+    h: 2.65,
+    wall: '#e7d7bc',
+    trim: '#8a6240',
+    exterior: '#d7b48a',
   },
-  {
-    style: 'skinny',
+  skinny: {
     name: 'Gallatin Skinny',
-    blurb: 'A narrow modern infill. Thin from above, with the door tucked on the side.',
+    blurb: 'A tall narrow room, the modern infill, with the door on the side.',
+    w: 3.7,
+    d: 6.4,
+    h: 3.45,
+    wall: '#f4efe6',
+    trim: '#1f7a72',
+    exterior: '#efe6d6',
   },
-]
-
-export const START_ROOMS = {
-  brick: ['living', 'kitchen'],
-  shotgun: ['living', 'sleep'],
-  skinny: ['living', 'studio'],
 }
 
-export const EXTRA_ROOMS = ['sunroom', 'nook', 'pantry', 'plants', 'maps']
-
-export const ROOM_LABELS = {
-  living: 'Living room',
-  kitchen: 'Kitchen',
-  sleep: 'Sleep room',
-  studio: 'Studio',
-  sunroom: 'Sunroom',
-  nook: 'Reading nook',
-  pantry: 'Snack pantry',
-  plants: 'Plant room',
-  maps: 'Map nook',
-}
-
-export const SHOW = [
-  {
-    id: 'heat',
-    kicker: 'Round 1',
-    prompt:
-      'This drumstick is wearing sunglasses, and the sunglasses just melted. What heat is that?',
-    choices: [
-      { id: 'polite', label: 'Polite Pepper' },
-      { id: 'sweaty', label: 'Sweaty Smile' },
-      { id: 'volcano', label: 'Cartoon Volcano' },
-    ],
-    answer: 'volcano',
-    yes: 'Pip rings a tiny bell. Cartoon Volcano. The sunglasses have retired.',
-    no: 'Pip consults a pickle. That is not the heat.',
-  },
-  {
-    id: 'pickles',
-    kicker: 'Round 2',
-    prompt: 'Count the pickles on the plate. They are bright green and sitting in plain sight.',
-    choices: [
-      { id: 'three', label: '3 pickles' },
-      { id: 'four', label: '4 pickles' },
-      { id: 'nine', label: '9 pickles' },
-    ],
-    answer: 'four',
-    yes: 'Four pickles. Pip bows so low the microphone squeaks.',
-    no: 'Pip counts again, slowly, with one polite finger.',
-  },
-  {
-    id: 'cushion',
-    kicker: 'Round 3',
-    prompt: 'The hot chicken is under the cushion with the star. Which cushion is that?',
-    choices: [
-      { id: 'star', label: 'Star cushion' },
-      { id: 'plain', label: 'Plain cushion' },
-      { id: 'plant', label: 'The houseplant' },
-    ],
-    answer: 'star',
-    yes: 'Correct. The houseplant is relieved. It was not a cushion.',
-    no: 'The star cushion rustles. Pip points at it again.',
-  },
+export const FURNITURE = [
+  { id: 'couch', name: 'Low couch' },
+  { id: 'lamp', name: 'Corner lamp' },
+  { id: 'table', name: 'Round table' },
+  { id: 'plant', name: 'Potted fig' },
+  { id: 'chair', name: 'Side chair' },
+  { id: 'shelf', name: 'Book shelf' },
 ]
 
-export const POSES = [
-  {
-    id: 'flamingo',
-    name: 'Flamingo Mailbox',
-    detail: 'One leg up. One arm straight out like a mailbox flag.',
-  },
-  {
-    id: 'pizza',
-    name: 'Pizza Roof',
-    detail: 'Both arms up in a pointy roof.',
-  },
-  {
-    id: 'bicycle',
-    name: 'Sleepy Bicycle',
-    detail: 'Arms out like handlebars. Eyes closed.',
-  },
+export const STREET_PIECES = [
+  { id: 'bike', name: 'Sidewalk bike', lane: 'sidewalk' },
+  { id: 'mural', name: 'Mural wall', lane: 'sidewalk' },
+  { id: 'bench', name: 'Shelby Park bench', lane: 'sidewalk' },
+  { id: 'tabla', name: 'Tabla Rasa Toy Store', lane: 'sidewalk' },
+  { id: 'corner', name: 'Five Points corner', lane: 'street' },
+  { id: 'lamppost', name: 'Street lamp', lane: 'street' },
 ]
 
-export function poseById(id) {
-  return POSES.find((pose) => pose.id === id)
-}
+const FURNITURE_IDS = new Set(FURNITURE.map((item) => item.id))
+const STREET_BY_ID = Object.fromEntries(STREET_PIECES.map((item) => [item.id, item]))
 
 export function createState() {
   return {
@@ -108,226 +63,203 @@ export function createState() {
     kept: [],
     draft: null,
     focusId: null,
-    tvDone: false,
-    tennisDone: false,
-    showIndex: 0,
-    showScore: 0,
-    showLocked: false,
-    showRight: null,
-    showChoice: null,
-    poseOrder: [],
-    poseIndex: 0,
-    poseOptions: [],
-    poseNote: '',
-    lastRoom: null,
-    missedPose: null,
-    wantedPose: null,
-    lostName: null,
-    lostStyle: null,
+    street: [],
+    fight: null,
   }
 }
 
 export function activeHouse(state) {
-  if (state.draft) return state.draft
-  return state.kept.find((house) => house.uid === state.focusId) || state.kept.at(-1) || null
+  if (state.screen === 'kept') {
+    return state.kept.find((house) => house.uid === state.focusId) || state.kept.at(-1) || null
+  }
+  return state.draft
 }
 
-export function canKnock(state) {
-  return Boolean(state.draft) && state.tvDone && state.tennisDone && state.screen === 'house'
+export function streetReady(state) {
+  const lanes = new Set(state.street.map((piece) => piece.lane))
+  return lanes.has('sidewalk') && lanes.has('street')
 }
 
-export function isNeighborhood(state) {
-  return state.kept.length >= 3
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value))
 }
 
-function blankShow(state) {
+export function clampInside(style, x, z) {
+  const room = ROOMS[style]
+  const margin = 0.55
+  return {
+    x: clamp(x, -room.w / 2 + margin, room.w / 2 - margin),
+    z: clamp(z, -room.d / 2 + margin, room.d / 2 - margin),
+  }
+}
+
+function separate(items, x, z, style) {
+  let nx = x
+  let nz = z
+  for (let n = 0; n < 8; n += 1) {
+    const crowded = items.some((item) => {
+      const dx = nx - item.x
+      const dz = nz - item.z
+      return dx * dx + dz * dz < 0.72
+    })
+    if (!crowded) break
+    const angle = n * 1.15
+    nx = x + Math.cos(angle) * (0.85 + n * 0.12)
+    nz = z + Math.sin(angle) * (0.85 + n * 0.12)
+  }
+  return clampInside(style, nx, nz)
+}
+
+function freshFight() {
+  return { hits: 0, misses: 0, round: 1, kind: 'punch', open: false }
+}
+
+function winFight(state) {
+  const house = { ...state.draft, furniture: state.draft.furniture.map((item) => ({ ...item })) }
   return {
     ...state,
-    showIndex: 0,
-    showScore: 0,
-    showLocked: false,
-    showRight: null,
-    showChoice: null,
+    screen: 'kept',
+    kept: [...state.kept, house],
+    focusId: house.uid,
+    draft: null,
+    fight: null,
   }
 }
 
-export function shuffle(list, rng) {
-  const arr = [...list]
-  for (let i = arr.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(rng() * (i + 1))
-    ;[arr[i], arr[j]] = [arr[j], arr[i]]
-  }
-  return arr
-}
-
-function nextPoseSlice(order, index, rng) {
+function loseFight(state) {
   return {
-    poseOrder: order,
-    poseIndex: index,
-    poseOptions: shuffle(
-      POSES.map((pose) => pose.id),
-      rng,
-    ),
-    poseNote: index === 0 ? '' : 'Copied.',
+    ...state,
+    screen: 'rebuild',
+    draft: { ...state.draft, furniture: [], attacked: false },
+    fight: null,
   }
 }
 
-function clearedLost() {
-  return { lostName: null, lostStyle: null, missedPose: null, wantedPose: null }
+function applyHit(state) {
+  const hits = state.fight.hits + 1
+  if (hits >= HITS_TO_WIN) return winFight(state)
+  return {
+    ...state,
+    fight: {
+      hits,
+      misses: state.fight.misses,
+      round: state.fight.round + 1,
+      kind: state.fight.kind === 'punch' ? 'kick' : 'punch',
+      open: false,
+    },
+  }
 }
 
-export function reduce(state, action, payload = {}, rng = Math.random) {
+function applyMiss(state) {
+  const misses = state.fight.misses + 1
+  if (misses >= MISSES_TO_LOSE) return loseFight(state)
+  return {
+    ...state,
+    fight: {
+      hits: state.fight.hits,
+      misses,
+      round: state.fight.round + 1,
+      kind: state.fight.kind === 'punch' ? 'kick' : 'punch',
+      open: false,
+    },
+  }
+}
+
+export function reduce(state, action, payload = {}) {
   switch (action) {
     case 'choose-house': {
-      if (state.screen !== 'pick') return state
+      if (state.screen !== 'pick' && state.screen !== 'street') return state
+      if (state.screen === 'street' && !streetReady(state)) return state
       const style = payload.house
-      const type = HOUSE_TYPES.find((house) => house.style === style)
-      if (!type) return state
+      if (!ROOMS[style]) return state
       const serial = state.serial + 1
       const draft = {
         uid: `house-${serial}`,
         style,
-        name: type.name,
+        name: ROOMS[style].name,
         lot: state.kept.length + 1,
-        rooms: [...START_ROOMS[style]],
+        furniture: [],
+        attacked: false,
       }
       return {
-        ...blankShow(state),
-        ...clearedLost(),
+        ...state,
         serial,
         draft,
         focusId: draft.uid,
-        screen: 'house',
-        tvDone: false,
-        tennisDone: false,
-        poseOrder: [],
-        poseIndex: 0,
-        poseOptions: [],
-        poseNote: '',
-        lastRoom: null,
+        screen: 'decorate',
+        fight: null,
       }
     }
-    case 'open-tv': {
-      if (state.screen !== 'house') return state
-      return { ...blankShow(state), screen: 'tv' }
-    }
-    case 'tv-answer': {
-      if (state.screen !== 'tv' || state.showLocked) return state
-      const question = SHOW[state.showIndex]
-      if (!question || !question.choices.some((choice) => choice.id === payload.choice)) return state
-      const right = payload.choice === question.answer
-      return {
-        ...state,
-        showLocked: true,
-        showRight: right,
-        showChoice: payload.choice,
-        showScore: state.showScore + (right ? 1 : 0),
-      }
-    }
-    case 'tv-next': {
-      if (state.screen !== 'tv' || !state.showLocked) return state
-      if (state.showIndex + 1 >= SHOW.length) return { ...state, screen: 'tv-result' }
-      return {
-        ...state,
-        showIndex: state.showIndex + 1,
-        showLocked: false,
-        showRight: null,
-        showChoice: null,
-      }
-    }
-    case 'tv-close': {
-      if (state.screen !== 'tv-result' && state.screen !== 'tv') return state
-      const finished = state.screen === 'tv-result'
-      return { ...state, screen: 'house', tvDone: state.tvDone || finished }
-    }
-    case 'open-tennis': {
-      if (state.screen !== 'house') return state
-      return { ...state, screen: 'tennis' }
-    }
-    case 'tennis-back': {
-      if (state.screen !== 'tennis') return state
-      return { ...state, screen: 'house' }
-    }
-    case 'tennis-won': {
-      if (state.screen !== 'tennis') return state
-      return { ...state, screen: 'house', tennisDone: true }
-    }
-    case 'open-knock': {
-      if (!canKnock(state)) return state
-      return { ...state, screen: 'knock' }
-    }
-    case 'start-poses': {
-      if (state.screen !== 'knock') return state
-      const order = shuffle(
-        POSES.map((pose) => pose.id),
-        rng,
+    case 'place': {
+      if (state.screen !== 'decorate' || !state.draft || state.draft.attacked) return state
+      if (!FURNITURE_IDS.has(payload.kind)) return state
+      const spot = separate(
+        state.draft.furniture,
+        Number(payload.x) || 0,
+        Number(payload.z) || 0,
+        state.draft.style,
       )
-      return { ...state, screen: 'pose', ...nextPoseSlice(order, 0, rng), poseNote: '' }
-    }
-    case 'pose': {
-      if (state.screen !== 'pose' || !state.draft) return state
-      const want = state.poseOrder[state.poseIndex]
-      if (!want || !poseById(payload.pose)) return state
-      if (payload.pose !== want) {
+      const serial = state.serial + 1
+      const furniture = [
+        ...state.draft.furniture,
+        {
+          id: `f-${serial}`,
+          kind: payload.kind,
+          x: spot.x,
+          z: spot.z,
+          rot: Number(payload.rot) || 0,
+        },
+      ]
+      const draft = { ...state.draft, furniture }
+      if (furniture.length >= ATTACK_AFTER) {
         return {
           ...state,
-          lostName: state.draft.name,
-          lostStyle: state.draft.style,
-          draft: null,
-          screen: 'whimper',
-          tvDone: false,
-          tennisDone: false,
-          missedPose: payload.pose,
-          wantedPose: want,
-          poseNote: '',
+          serial,
+          draft: { ...draft, attacked: true },
+          screen: 'fight',
+          fight: freshFight(),
         }
       }
-      if (state.poseIndex + 1 >= state.poseOrder.length) {
-        const room = EXTRA_ROOMS.find((id) => !state.draft.rooms.includes(id)) || 'maps'
-        const house = { ...state.draft, rooms: [...state.draft.rooms, room] }
-        return {
-          ...state,
-          ...clearedLost(),
-          kept: [...state.kept, house],
-          draft: null,
-          focusId: house.uid,
-          lastRoom: room,
-          screen: 'win',
-          tvDone: false,
-          tennisDone: false,
-          poseNote: '',
-        }
-      }
-      return { ...state, ...nextPoseSlice(state.poseOrder, state.poseIndex + 1, rng) }
+      return { ...state, serial, draft }
     }
-    case 'see-house': {
-      if (state.screen !== 'win' && state.screen !== 'neighborhood') return state
-      return { ...state, screen: 'house' }
+    case 'open-window': {
+      if (state.screen !== 'fight' || !state.fight || state.fight.open) return state
+      return { ...state, fight: { ...state.fight, open: true } }
     }
-    case 'build-another': {
-      if ((state.screen !== 'win' && state.screen !== 'house') || state.draft) return state
-      if (isNeighborhood(state)) return { ...state, screen: 'neighborhood' }
-      return { ...state, screen: 'pick' }
+    case 'strike': {
+      if (state.screen !== 'fight' || !state.fight) return state
+      return state.fight.open ? applyHit(state) : applyMiss(state)
     }
-    case 'rebuild': {
-      if (state.screen !== 'whimper') return state
+    case 'whiff': {
+      if (state.screen !== 'fight' || !state.fight?.open) return state
+      return applyMiss(state)
+    }
+    case 'to-street': {
+      if (state.screen !== 'kept') return state
+      return { ...state, screen: 'street' }
+    }
+    case 'place-street': {
+      if (state.screen !== 'street') return state
+      const piece = STREET_BY_ID[payload.kind]
+      if (!piece) return state
+      const serial = state.serial + 1
       return {
         ...state,
-        ...clearedLost(),
-        screen: 'pick',
-        draft: null,
-        tvDone: false,
-        tennisDone: false,
+        serial,
+        street: [
+          ...state.street,
+          {
+            id: `s-${serial}`,
+            kind: piece.id,
+            lane: piece.lane,
+            slot: state.street.length,
+          },
+        ],
       }
     }
-    case 'see-neighborhood': {
-      if (!isNeighborhood(state)) return state
-      if (state.screen !== 'win' && state.screen !== 'house') return state
-      return { ...state, screen: 'neighborhood' }
-    }
-    case 'new-block': {
-      if (state.screen !== 'neighborhood') return state
-      return createState()
+    case 'decorate-again': {
+      if (state.screen !== 'rebuild' || !state.draft) return state
+      return { ...state, screen: 'decorate', fight: null }
     }
     default:
       return state
