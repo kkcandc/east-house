@@ -56,6 +56,43 @@ export const STREET_PIECES = [
 const FURNITURE_IDS = new Set(FURNITURE.map((item) => item.id))
 const STREET_BY_ID = Object.fromEntries(STREET_PIECES.map((item) => [item.id, item]))
 
+export const BLOCK = {
+  sidewalk: { minX: 0.35, maxX: 2.15 },
+  street: { minX: 3.2, maxX: 5.6 },
+  minZ: -8,
+  maxZ: 9,
+}
+
+export function houseFootprint(index) {
+  const z = 3.2 - index * 4.4
+  return { minX: -3.05, maxX: -0.2, minZ: z - 1.55, maxZ: z + 1.55, z }
+}
+
+function overlaps(x, z, box, pad) {
+  return x > box.minX - pad && x < box.maxX + pad && z > box.minZ - pad && z < box.maxZ + pad
+}
+
+export function placeOnLane(lane, x, z, existing, houseCount) {
+  const band = lane === 'street' ? BLOCK.street : BLOCK.sidewalk
+  let nx = clamp(Number(x) || (band.minX + band.maxX) / 2, band.minX, band.maxX)
+  let nz = clamp(Number(z) || 2, BLOCK.minZ, BLOCK.maxZ)
+  for (let i = 0; i < houseCount; i += 1) {
+    const box = houseFootprint(i)
+    if (overlaps(nx, nz, box, 0.2)) nz = box.maxZ + 0.9
+  }
+  nz = clamp(nz, BLOCK.minZ, BLOCK.maxZ)
+  for (let n = 0; n < 8; n += 1) {
+    const crowded = existing.some((item) => {
+      const dx = nx - item.x
+      const dz = nz - item.z
+      return dx * dx + dz * dz < 1.2
+    })
+    if (!crowded) break
+    nz = clamp(nz - 1.2, BLOCK.minZ, BLOCK.maxZ)
+  }
+  return { x: nx, z: nz }
+}
+
 export function createState() {
   return {
     screen: 'pick',
@@ -91,23 +128,6 @@ export function clampInside(style, x, z) {
     x: clamp(x, -room.w / 2 + margin, room.w / 2 - margin),
     z: clamp(z, -room.d / 2 + margin, room.d / 2 - margin),
   }
-}
-
-function separate(items, x, z, style) {
-  let nx = x
-  let nz = z
-  for (let n = 0; n < 8; n += 1) {
-    const crowded = items.some((item) => {
-      const dx = nx - item.x
-      const dz = nz - item.z
-      return dx * dx + dz * dz < 0.72
-    })
-    if (!crowded) break
-    const angle = n * 1.15
-    nx = x + Math.cos(angle) * (0.85 + n * 0.12)
-    nz = z + Math.sin(angle) * (0.85 + n * 0.12)
-  }
-  return clampInside(style, nx, nz)
 }
 
 function freshFight() {
@@ -193,12 +213,7 @@ export function reduce(state, action, payload = {}) {
     case 'place': {
       if (state.screen !== 'decorate' || !state.draft || state.draft.attacked) return state
       if (!FURNITURE_IDS.has(payload.kind)) return state
-      const spot = separate(
-        state.draft.furniture,
-        Number(payload.x) || 0,
-        Number(payload.z) || 0,
-        state.draft.style,
-      )
+      const spot = clampInside(state.draft.style, Number(payload.x) || 0, Number(payload.z) || 0)
       const serial = state.serial + 1
       const furniture = [
         ...state.draft.furniture,
@@ -243,6 +258,7 @@ export function reduce(state, action, payload = {}) {
       const piece = STREET_BY_ID[payload.kind]
       if (!piece) return state
       const serial = state.serial + 1
+      const spot = placeOnLane(piece.lane, payload.x, payload.z, state.street, state.kept.length)
       return {
         ...state,
         serial,
@@ -252,7 +268,10 @@ export function reduce(state, action, payload = {}) {
             id: `s-${serial}`,
             kind: piece.id,
             lane: piece.lane,
-            slot: state.street.length,
+            x: spot.x,
+            z: spot.z,
+            rot: Number(payload.rot) || 0,
+            settled: false,
           },
         ],
       }

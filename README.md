@@ -15,7 +15,7 @@ npm install
 npm run dev
 ```
 
-Open the local URL. The game is a phone-width column. Turn and walk with the buttons, then tap Place here. Drag on the picture to look around. In the fight, tap the gold button only when it says Punch or Kick.
+Open the local URL. The game is a phone-width column. Drag the picture to look, or click it to capture the mouse. Hold Walk, or drag the gold stick. Place here sets the piece down in front of you. On the block, sidewalk pieces land on the sidewalk and street pieces land in the road. In the fight, tap the button only when it says Punch or Kick.
 
 ## Test
 

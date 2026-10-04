@@ -1,15 +1,34 @@
 import * as THREE from 'three'
-import { ROOMS, activeHouse } from './logic.js'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { BLOCK, ROOMS, activeHouse, houseFootprint, placeOnLane } from './logic.js'
 
 const EYE = 1.62
 
-export function createWorld(canvas) {
+const SHAPES = {
+  couch: { hx: 0.68, hy: 0.38, hz: 0.32, mass: 34 },
+  lamp: { hx: 0.16, hy: 0.62, hz: 0.16, mass: 4 },
+  table: { hx: 0.42, hy: 0.34, hz: 0.42, mass: 16 },
+  plant: { hx: 0.22, hy: 0.38, hz: 0.22, mass: 6 },
+  chair: { hx: 0.24, hy: 0.42, hz: 0.24, mass: 8 },
+  shelf: { hx: 0.46, hy: 0.58, hz: 0.18, mass: 22 },
+  bike: { hx: 0.58, hy: 0.4, hz: 0.2, mass: 12 },
+  mural: { hx: 0.68, hy: 0.78, hz: 0.14, mass: 48 },
+  bench: { hx: 0.58, hy: 0.36, hz: 0.2, mass: 20 },
+  tabla: { hx: 0.36, hy: 0.36, hz: 0.28, mass: 11 },
+  corner: { hx: 0.22, hy: 0.82, hz: 0.16, mass: 16 },
+  lamppost: { hx: 0.16, hy: 0.95, hz: 0.16, mass: 18 },
+}
+
+export function createWorld(canvas, RAPIER) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75))
   renderer.shadowMap.enabled = true
   renderer.shadowMap.type = THREE.PCFSoftShadowMap
   renderer.toneMapping = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 1.22
+  renderer.toneMappingExposure = 1.18
   renderer.outputColorSpace = THREE.SRGBColorSpace
 
   const scene = new THREE.Scene()
@@ -17,6 +36,15 @@ export function createWorld(canvas) {
 
   const camera = new THREE.PerspectiveCamera(68, 1, 0.08, 50)
   camera.rotation.order = 'YXZ'
+
+  const composer = new EffectComposer(renderer)
+  composer.addPass(new RenderPass(scene, camera))
+  const ssaoPass = new SSAOPass(scene, camera, 430, 800, 16)
+  ssaoPass.kernelRadius = 14
+  ssaoPass.minDistance = 0.0015
+  ssaoPass.maxDistance = 0.22
+  composer.addPass(ssaoPass)
+  composer.addPass(new OutputPass())
 
   const hemi = new THREE.HemisphereLight('#fff4e4', '#8ea0b0', 1.15)
   scene.add(hemi)
@@ -69,6 +97,135 @@ export function createWorld(canvas) {
     hitT: 0,
     time: 0,
     roomId: '',
+    streetItems: [],
+    houseCount: 0,
+    lane: 'sidewalk',
+  }
+
+  let sim = null
+  const loose = new Set()
+  const api = { onRest: null }
+
+  function destroySim() {
+    loose.clear()
+    if (sim) {
+      sim.world.free()
+      sim = null
+    }
+  }
+
+  function bootSim(x, z) {
+    destroySim()
+    const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
+    const controller = world.createCharacterController(0.03)
+    controller.setSlideEnabled(true)
+    controller.enableSnapToGround(0.45)
+    controller.setApplyImpulsesToDynamicBodies(true)
+    controller.setMaxSlopeClimbAngle((48 * Math.PI) / 180)
+    const body = world.createRigidBody(
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, 0.58, z),
+    )
+    const collider = world.createCollider(RAPIER.ColliderDesc.capsule(0.36, 0.22), body)
+    sim = { world, controller, body, collider }
+  }
+
+  function addFixed(x, y, z, hx, hy, hz) {
+    if (!sim) return
+    const body = sim.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z))
+    sim.world.createCollider(RAPIER.ColliderDesc.cuboid(hx, hy, hz), body)
+  }
+
+  function addRoomSolids(spec) {
+    const { w, d, h } = spec
+    addFixed(0, -0.1, 0, w / 2, 0.1, d / 2)
+    addFixed(-w / 2, h / 2, 0, 0.1, h / 2, d / 2)
+    addFixed(w / 2, h / 2, 0, 0.1, h / 2, d / 2)
+    addFixed(0, h / 2, -d / 2, w / 2, h / 2, 0.1)
+    addFixed(0, h / 2, d / 2, w / 2, h / 2, 0.1)
+  }
+
+  function addLoose(mesh, kind, id, settled) {
+    if (!sim || mesh.userData.body) return
+    const shape = SHAPES[kind]
+    if (!shape) return
+    const yaw = mesh.rotation.y
+    const lift = shape.hy
+    const y = settled ? lift : lift + 0.34
+    const desc = (settled ? RAPIER.RigidBodyDesc.kinematicPositionBased() : RAPIER.RigidBodyDesc.dynamic())
+      .setTranslation(mesh.position.x, y, mesh.position.z)
+      .setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) })
+      .setLinearDamping(3.1)
+      .setAngularDamping(6)
+      .setCanSleep(true)
+      .setCcdEnabled(true)
+    const body = sim.world.createRigidBody(desc)
+    if (!settled) body.setEnabledRotations(false, true, false, true)
+    const volume = shape.hx * shape.hy * shape.hz * 8
+    const collider = RAPIER.ColliderDesc.cuboid(shape.hx, shape.hy, shape.hz)
+      .setFriction(0.94)
+      .setRestitution(0.02)
+      .setDensity(shape.mass / volume)
+    sim.world.createCollider(collider, body)
+    mesh.userData.body = body
+    mesh.userData.lift = lift
+    mesh.userData.kind = kind
+    mesh.userData.id = id
+    mesh.userData.rested = Boolean(settled)
+    mesh.userData.age = 0
+    loose.add(mesh)
+  }
+
+  function restLoose(mesh) {
+    const body = mesh.userData.body
+    if (!body || mesh.userData.rested) return
+    mesh.userData.rested = true
+    body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true)
+    body.setLinvel({ x: 0, y: 0, z: 0 }, true)
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true)
+    const yaw = mesh.rotation.y - faceOffset(mesh.userData.kind)
+    api.onRest?.(mesh.userData.id, {
+      x: mesh.position.x,
+      z: mesh.position.z,
+      rot: yaw,
+      settled: true,
+    })
+  }
+
+  function stepSim(dt, wishX, wishZ) {
+    if (!sim) return
+    const { world, controller, body, collider } = sim
+    controller.computeColliderMovement(collider, { x: wishX, y: -2.4 * dt, z: wishZ })
+    const moved = controller.computedMovement()
+    const t = body.translation()
+    const next = {
+      x: t.x + moved.x,
+      y: Math.max(0.58, t.y + moved.y),
+      z: t.z + moved.z,
+    }
+    if (state3.bounds) {
+      const { minX, maxX, minZ, maxZ } = state3.bounds
+      next.x = clamp(next.x, minX, maxX)
+      next.z = clamp(next.z, minZ, maxZ)
+    }
+    body.setNextKinematicTranslation(next)
+    world.timestep = Math.min(0.033, Math.max(dt, 0.001))
+    world.step()
+    const now = body.translation()
+    state3.px = now.x
+    state3.pz = now.z
+    for (const mesh of loose) {
+      const actor = mesh.userData.body
+      if (!actor) continue
+      const p = actor.translation()
+      mesh.position.set(p.x, Math.max(0, p.y - mesh.userData.lift), p.z)
+      const q = actor.rotation()
+      mesh.rotation.y = Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z))
+      mesh.userData.age += dt
+      if (mesh.userData.rested) continue
+      const velocity = actor.linvel()
+      const speed = Math.hypot(velocity.x, velocity.y, velocity.z)
+      if (actor.isSleeping() || (mesh.userData.age > 0.9 && speed < 0.12)) restLoose(mesh)
+    }
   }
 
   function resize() {
@@ -77,6 +234,8 @@ export function createWorld(canvas) {
     camera.aspect = width / height
     camera.updateProjectionMatrix()
     renderer.setSize(width, height, false)
+    composer.setSize(width, height)
+    ssaoPass.setSize(width, height)
   }
 
   function forward() {
@@ -84,7 +243,7 @@ export function createWorld(canvas) {
   }
 
   function applyCamera() {
-    const eye = state3.mode === 'street' ? 2.35 : EYE
+    const eye = EYE
     camera.position.set(state3.px, eye, state3.pz)
     camera.rotation.y = state3.yaw
     camera.rotation.x = state3.pitch
@@ -187,6 +346,8 @@ export function createWorld(canvas) {
         state3.yaw = 0
         state3.pitch = -0.06
       }
+      bootSim(state3.px, state3.pz)
+      addRoomSolids(ROOMS[house.style])
     }
     syncFurniture(house.furniture || [])
   }
@@ -196,21 +357,47 @@ export function createWorld(canvas) {
     roomGroup.visible = false
     streetGroup.visible = true
     state3.floor = null
+    state3.streetItems = game.street || []
+    state3.houseCount = game.kept?.length || 0
     buildStreet(game)
-    state3.bounds = { minX: -0.55, maxX: 1.35, minZ: -8.5, maxZ: 8.4 }
-    if (reset) {
-      state3.px = 0.45
-      state3.pz = 8.35
-      state3.yaw = 0.06
-      state3.pitch = -0.34
+    state3.bounds = {
+      minX: BLOCK.sidewalk.minX + 0.15,
+      maxX: BLOCK.street.maxX - 0.2,
+      minZ: BLOCK.minZ + 0.4,
+      maxZ: BLOCK.maxZ - 0.4,
     }
+    if (reset) {
+      state3.px = 1.15
+      state3.pz = 6.6
+      state3.yaw = 0
+      state3.pitch = -0.08
+    }
+    bootSim(state3.px, state3.pz)
+    addFixed(1.6, -0.12, 0.4, 6, 0.12, 12)
+    game.kept.forEach((_, index) => {
+      const box = houseFootprint(index)
+      addFixed(
+        (box.minX + box.maxX) / 2,
+        1.4,
+        (box.minZ + box.maxZ) / 2,
+        (box.maxX - box.minX) / 2,
+        1.4,
+        (box.maxZ - box.minZ) / 2,
+      )
+    })
+    streetGroup.traverse((obj) => {
+      if (obj.userData?.looseKind) addLoose(obj, obj.userData.looseKind, obj.userData.id, obj.userData.settled)
+    })
   }
 
   function syncFurniture(items) {
     if (!state3.furniture) return
     const need = new Set(items.map((item) => item.id))
     for (const child of [...state3.furniture.children]) {
-      if (!need.has(child.userData.id)) state3.furniture.remove(child)
+      if (!need.has(child.userData.id)) {
+        loose.delete(child)
+        state3.furniture.remove(child)
+      }
     }
     for (const item of items) {
       if (state3.furniture.children.some((child) => child.userData.id === item.id)) continue
@@ -219,16 +406,32 @@ export function createWorld(canvas) {
       mesh.position.set(item.x, 0, item.z)
       mesh.rotation.y = item.rot + faceOffset(item.kind)
       state3.furniture.add(mesh)
+      addLoose(mesh, item.kind, item.id, item.settled)
+    }
+  }
+
+  const marker = new THREE.Mesh(
+    new THREE.RingGeometry(0.32, 0.48, 28),
+    new THREE.MeshBasicMaterial({ color: '#f2c14e', side: THREE.DoubleSide, transparent: true, opacity: 0.9 }),
+  )
+  marker.rotation.x = -Math.PI / 2
+  marker.visible = false
+  scene.add(marker)
+
+  function aimPoint() {
+    const dir = forward()
+    return {
+      x: state3.px + dir.x * 1.55,
+      z: state3.pz + dir.z * 1.55,
+      rot: state3.yaw,
     }
   }
 
   function placePoint() {
-    const dir = forward()
-    return {
-      x: state3.px + dir.x * 1.35,
-      z: state3.pz + dir.z * 1.35,
-      rot: state3.yaw,
-    }
+    const aim = aimPoint()
+    if (state3.mode !== 'street') return aim
+    const spot = placeOnLane(state3.lane, aim.x, aim.z, state3.streetItems, state3.houseCount)
+    return { x: spot.x, z: spot.z, rot: state3.yaw }
   }
 
   function rayPlace(clientX, clientY) {
@@ -271,23 +474,26 @@ export function createWorld(canvas) {
       const angle = state3.time * 0.18
       camera.position.set(Math.sin(angle) * 1.4 + 1.2, 2.5, 5.2)
       camera.lookAt(0.6, 1.1, -1)
-      renderer.render(scene, camera)
+      composer.render()
       return
     }
 
     if (state3.mode !== 'fight-frozen') {
       state3.yaw -= input.lookX || 0
-      state3.pitch = clamp(state3.pitch - (input.lookY || 0), -0.9, 0.7)
+      state3.pitch = clamp(state3.pitch - (input.lookY || 0), -0.95, 0.55)
       input.lookX = 0
       input.lookY = 0
       const dirVec = forward()
       const rx = -dirVec.z
       const rz = dirVec.x
-      const speed = 1.8 * dt
+      const speed = 2.45 * dt
       const forwardAmt = input.forward || 0
       const strafe = input.strafe || 0
+      const wishX = dirVec.x * forwardAmt * speed + rx * strafe * speed
+      const wishZ = dirVec.z * forwardAmt * speed + rz * strafe * speed
       if (state3.mode === 'interior' || state3.mode === 'street') {
-        tryMove(dirVec.x * forwardAmt * speed + rx * strafe * speed, dirVec.z * forwardAmt * speed + rz * strafe * speed)
+        if (sim) stepSim(dt, wishX, wishZ)
+        else tryMove(wishX, wishZ)
       }
     }
     applyCamera()
@@ -316,6 +522,14 @@ export function createWorld(canvas) {
       } else {
         state3.ghost.visible = false
       }
+    }
+
+    if (state3.mode === 'street') {
+      const spot = placePoint()
+      marker.position.set(spot.x, 0.09, spot.z)
+      marker.visible = true
+    } else {
+      marker.visible = false
     }
 
     if (state3.nico) {
@@ -347,7 +561,7 @@ export function createWorld(canvas) {
       }
     }
 
-    renderer.render(scene, camera)
+    composer.render()
   }
 
   function buildStreet(game) {
@@ -362,19 +576,23 @@ export function createWorld(canvas) {
     grass.receiveShadow = true
     streetGroup.add(grass)
 
-    const walk = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.08, 24), mat('#e4d5c0', { roughness: 0.95 }))
-    walk.position.set(-0.15, 0.04, -1)
+    const sideCenter = (BLOCK.sidewalk.minX + BLOCK.sidewalk.maxX) / 2
+    const sideWidth = BLOCK.sidewalk.maxX - BLOCK.sidewalk.minX + 0.25
+    const walk = new THREE.Mesh(new THREE.BoxGeometry(sideWidth, 0.08, 22), mat('#e4d5c0', { roughness: 0.95 }))
+    walk.position.set(sideCenter, 0.04, 0.5)
     walk.receiveShadow = true
     streetGroup.add(walk)
 
-    const road = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.04, 24), mat('#3c3834', { roughness: 0.9 }))
-    road.position.set(2.15, 0.03, -1)
+    const roadCenter = (BLOCK.street.minX + BLOCK.street.maxX) / 2
+    const roadWidth = BLOCK.street.maxX - BLOCK.street.minX + 0.35
+    const road = new THREE.Mesh(new THREE.BoxGeometry(roadWidth, 0.04, 22), mat('#3c3834', { roughness: 0.9 }))
+    road.position.set(roadCenter, 0.03, 0.5)
     road.receiveShadow = true
     streetGroup.add(road)
 
     for (let i = 0; i < 10; i += 1) {
       const dash = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.7), mat('#f6f1e8'))
-      dash.position.set(2.15, 0.06, 6.2 - i * 1.7)
+      dash.position.set(roadCenter, 0.06, 6.4 - i * 1.7)
       streetGroup.add(dash)
     }
 
@@ -388,9 +606,11 @@ export function createWorld(canvas) {
 
     for (const piece of game.street) {
       const prop = streetProp(piece.kind)
-      const onSidewalk = piece.lane === 'sidewalk'
-      prop.position.set(onSidewalk ? 1.15 : 2.15, 0, 3.35 - piece.slot * 1.55)
-      prop.scale.setScalar(1.65)
+      prop.position.set(piece.x, 0, piece.z)
+      prop.rotation.y = piece.rot || 0
+      prop.userData.looseKind = piece.kind
+      prop.userData.id = piece.id
+      prop.userData.settled = Boolean(piece.settled)
       streetGroup.add(prop)
     }
 
@@ -429,12 +649,18 @@ export function createWorld(canvas) {
       } else {
         showStreet(game, reset || state3.mode === 'interior' || state3.mode === 'pick')
         state3.mode = 'street'
-        camera.fov = 74
+        camera.fov = 68
         camera.updateProjectionMatrix()
       }
     },
     set ghostKind(value) {
       state3.ghostKind = value
+    },
+    set lane(value) {
+      state3.lane = value
+    },
+    set onRest(fn) {
+      api.onRest = fn
     },
     set mood(value) {
       state3.mood = value
@@ -496,8 +722,8 @@ function addWindowWall(group, w, d, h, wall, trim) {
 }
 
 function faceOffset(kind) {
-  if (kind === 'lamp' || kind === 'plant' || kind === 'table') return 0
-  return Math.PI
+  if (kind === 'couch' || kind === 'chair' || kind === 'shelf') return Math.PI
+  return 0
 }
 
 function makeFurniture(kind, glow) {
@@ -659,7 +885,9 @@ function exteriorHouse(house, index) {
   const windowPane = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.56), mat('#d5eef8', { emissive: '#9fd0ea', emissiveIntensity: 0.25 }))
   windowPane.position.set(0, spec.h * 0.38, 1.12)
   group.add(body, roof, name, windowPane)
-  group.position.set(-0.85, 0, 2.5 - index * 3.8)
+  const lot = houseFootprint(index)
+  group.position.set((lot.minX + lot.maxX) / 2, 0, (lot.minZ + lot.maxZ) / 2)
+  group.rotation.y = Math.PI / 2
   return group
 }
 

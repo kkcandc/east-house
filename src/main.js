@@ -1,4 +1,5 @@
 import './style.css'
+import RAPIER from '@dimforge/rapier3d-compat'
 import { FURNITURE, ROOMS, STREET_PIECES, activeHouse, createState, reduce, streetReady } from './logic.js'
 import { createWorld } from './world.js'
 
@@ -20,20 +21,21 @@ app.innerHTML = `
     <p class="status" id="status"></p>
     <div class="catalog" id="catalog"></div>
     <div class="move">
-      <button type="button" id="turn-left">Turn left</button>
-      <button type="button" id="walk">Walk</button>
-      <button type="button" id="turn-right">Turn right</button>
-      <button type="button" id="back">Step back</button>
+      <button type="button" id="walk">Hold to walk</button>
     </div>
     <button type="button" id="place">Place here</button>
     <button type="button" class="hidden" id="grow">Add sidewalk and street</button>
     <button type="button" id="strike" class="hidden">Strike</button>
     <div class="cards hidden" id="next-houses"></div>
   </section>
+  <div class="stick hidden" id="stick" aria-label="Move">
+    <span id="knob"></span>
+  </div>
 `
 
 const canvas = document.querySelector('#view')
-const world = createWorld(canvas)
+await RAPIER.init()
+const world = createWorld(canvas, RAPIER)
 const sheet = document.querySelector('#sheet')
 const dock = document.querySelector('#dock')
 const where = document.querySelector('#where')
@@ -49,6 +51,9 @@ const grow = document.querySelector('#grow')
 const strike = document.querySelector('#strike')
 const crosshair = document.querySelector('#crosshair')
 const move = document.querySelector('.move')
+const stick = document.querySelector('#stick')
+const knob = document.querySelector('#knob')
+const walk = document.querySelector('#walk')
 
 const input = { forward: 0, strafe: 0, lookX: 0, lookY: 0 }
 let state = createState()
@@ -86,7 +91,9 @@ function paint() {
   grow.classList.toggle('hidden', state.screen !== 'kept')
   strike.classList.toggle('hidden', state.screen !== 'fight')
   place.classList.toggle('hidden', state.screen !== 'decorate' && state.screen !== 'street')
-  move.classList.toggle('hidden', state.screen === 'fight' || state.screen === 'street')
+  const walking = state.screen === 'decorate' || state.screen === 'kept' || state.screen === 'street'
+  move.classList.toggle('hidden', !walking)
+  stick.classList.toggle('hidden', !walking)
   nextHouses.classList.toggle('hidden', state.screen !== 'street')
   catalog.classList.toggle('hidden', state.screen !== 'decorate' && state.screen !== 'street')
 
@@ -105,14 +112,14 @@ function paint() {
   if (state.screen === 'decorate' && house) {
     const left = Math.max(0, 3 - house.furniture.length)
     status.textContent = left
-      ? `${house.furniture.length} placed. Walk, turn, and put down ${left} more.`
+      ? `${house.furniture.length} placed. Drag to look, hold Walk, then Place here. ${left} more.`
       : 'The room is furnished.'
   } else if (state.screen === 'kept' && house) {
     status.textContent = `${house.name} stays decorated. Walk around, then add the sidewalk and the street.`
   } else if (state.screen === 'street') {
     const names = state.street.map((piece) => STREET_PIECES.find((item) => item.id === piece.kind)?.name)
     status.textContent = names.length === 0
-      ? 'Place something on the sidewalk and something in the street. Then choose the next house.'
+      ? 'Stand on the sidewalk or in the road. Place here sets it down on that ground.'
       : streetReady(state)
         ? `On the block: ${names.join(', ')}. Choose the next house.`
         : `On the block: ${names.join(', ')}. Add both a sidewalk piece and a street piece.`
@@ -228,10 +235,6 @@ app.addEventListener('click', (event) => {
     return
   }
   if (event.target.closest('#place')) onPlace()
-  if (event.target.closest('#walk')) world.nudge('forward')
-  if (event.target.closest('#back')) world.nudge('back')
-  if (event.target.closest('#turn-left')) world.nudge('left')
-  if (event.target.closest('#turn-right')) world.nudge('right')
   if (event.target.closest('#strike')) onStrike()
   if (event.target.closest('#grow')) {
     state = reduce(state, 'to-street')
@@ -243,43 +246,110 @@ app.addEventListener('click', (event) => {
   }
 })
 
+const canLook = () => state.screen === 'decorate' || state.screen === 'kept' || state.screen === 'street'
+let lockClick = false
+
 canvas.addEventListener('pointerdown', (event) => {
+  if (event.pointerType === 'mouse' && canLook() && document.pointerLockElement !== canvas) {
+    canvas.requestPointerLock?.()
+    lockClick = true
+  }
   lookDrag = { x: event.clientX, y: event.clientY, moved: false, id: event.pointerId }
 })
 canvas.addEventListener('pointermove', (event) => {
   if (!lookDrag || lookDrag.id !== event.pointerId) return
+  if (document.pointerLockElement === canvas) return
   const dx = event.clientX - lookDrag.x
   const dy = event.clientY - lookDrag.y
-  if (Math.hypot(event.clientX - lookDrag.x, event.clientY - lookDrag.y) > 8) lookDrag.moved = true
-  if (state.screen === 'fight') return
-  input.lookX += dx * 0.005
-  input.lookY += dy * 0.004
+  if (Math.hypot(dx, dy) > 6) lookDrag.moved = true
+  if (!canLook()) return
+  input.lookX += dx * 0.0042
+  input.lookY += dy * 0.0032
   lookDrag.x = event.clientX
   lookDrag.y = event.clientY
 })
+document.addEventListener('mousemove', (event) => {
+  if (document.pointerLockElement !== canvas || !canLook()) return
+  input.lookX += event.movementX * 0.0026
+  input.lookY += event.movementY * 0.002
+})
 canvas.addEventListener('pointerup', (event) => {
   if (!lookDrag || lookDrag.id !== event.pointerId) return
-  const tap = !lookDrag.moved
+  const tap = !lookDrag.moved && !lockClick
   lookDrag = null
+  lockClick = false
   if (!tap) return
-  if (state.screen !== 'decorate') return
-  const hit = world.rayPlace(event.clientX, event.clientY)
-  if (hit) onPlace(hit)
+  if (state.screen === 'decorate') {
+    const hit = world.rayPlace(event.clientX, event.clientY)
+    if (hit) onPlace(hit)
+  } else if (state.screen === 'street') onPlace()
 })
 canvas.addEventListener('pointercancel', () => {
   lookDrag = null
+  lockClick = false
 })
 
+function pressWalk(event) {
+  if (!canLook()) return
+  walk.setPointerCapture?.(event.pointerId)
+  input.forward = 1
+  walk.setAttribute('aria-pressed', 'true')
+}
+function releaseWalk() {
+  if (stickPointer == null) input.forward = 0
+  walk.setAttribute('aria-pressed', 'false')
+}
+walk.addEventListener('pointerdown', pressWalk)
+walk.addEventListener('pointerup', releaseWalk)
+walk.addEventListener('pointercancel', releaseWalk)
+walk.addEventListener('lostpointercapture', releaseWalk)
+
+let stickPointer = null
+let stickOrigin = null
+function moveStick(event) {
+  const dx = Math.max(-1, Math.min(1, (event.clientX - stickOrigin.x) / 46))
+  const dy = Math.max(-1, Math.min(1, (event.clientY - stickOrigin.y) / 46))
+  input.strafe = dx
+  input.forward = -dy
+  knob.style.transform = `translate(${dx * 26}px, ${dy * 26}px)`
+}
+stick.addEventListener('pointerdown', (event) => {
+  if (!canLook()) return
+  stick.setPointerCapture(event.pointerId)
+  stickPointer = event.pointerId
+  stickOrigin = { x: event.clientX, y: event.clientY }
+  moveStick(event)
+})
+stick.addEventListener('pointermove', (event) => {
+  if (event.pointerId !== stickPointer) return
+  moveStick(event)
+})
+function endStick(event) {
+  if (event.pointerId !== stickPointer) return
+  stickPointer = null
+  input.strafe = 0
+  input.forward = 0
+  knob.style.transform = ''
+}
+stick.addEventListener('pointerup', endStick)
+stick.addEventListener('pointercancel', endStick)
+
 window.addEventListener('keydown', (event) => {
-  if (event.key === 'ArrowUp' || event.key === 'w') world.nudge('forward')
-  if (event.key === 'ArrowDown' || event.key === 's') world.nudge('back')
-  if (event.key === 'ArrowLeft' || event.key === 'a') world.nudge('left')
-  if (event.key === 'ArrowRight' || event.key === 'd') world.nudge('right')
+  if (event.key === 'w' || event.key === 'ArrowUp') input.forward = 1
+  if (event.key === 's' || event.key === 'ArrowDown') input.forward = -1
+  if (event.key === 'a') input.strafe = -1
+  if (event.key === 'd') input.strafe = 1
+  if (event.key === 'ArrowLeft') input.lookX += 0.12
+  if (event.key === 'ArrowRight') input.lookX -= 0.12
   if (event.key === ' ') {
     event.preventDefault()
     if (state.screen === 'fight') onStrike()
     else onPlace()
   }
+})
+window.addEventListener('keyup', (event) => {
+  if (event.key === 'w' || event.key === 'ArrowUp' || event.key === 's' || event.key === 'ArrowDown') input.forward = 0
+  if (event.key === 'a' || event.key === 'd') input.strafe = 0
 })
 
 new ResizeObserver(() => world.resize()).observe(app)
@@ -289,8 +359,24 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000)
   last = now
   world.ghostKind = state.screen === 'decorate' ? selected : null
-  world.update(dt, input)
+  world.lane = STREET_PIECES.find((item) => item.id === streetKind)?.lane || 'sidewalk'
+  const moving = state.screen === 'decorate' || state.screen === 'kept' || state.screen === 'street'
+  world.update(dt, moving ? input : { forward: 0, strafe: 0, lookX: 0, lookY: 0 })
   requestAnimationFrame(frame)
+}
+
+function writePose(list, id, pose) {
+  return list.map((item) => (item.id === id ? { ...item, ...pose } : item))
+}
+world.onRest = (id, pose) => {
+  if (state.draft) {
+    state = { ...state, draft: { ...state.draft, furniture: writePose(state.draft.furniture, id, pose) } }
+  }
+  state = {
+    ...state,
+    kept: state.kept.map((house) => ({ ...house, furniture: writePose(house.furniture, id, pose) })),
+    street: writePose(state.street, id, pose),
+  }
 }
 
 afterChange()

@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  BLOCK,
   FURNITURE,
   HITS_TO_WIN,
   MISSES_TO_LOSE,
   createState,
+  houseFootprint,
+  placeOnLane,
   reduce,
   streetReady,
 } from '../src/logic.js'
@@ -88,6 +91,20 @@ test('a win keeps the furniture and opens another house after the street', () =>
   assert.equal(state.draft.furniture.length, 0)
   assert.equal(state.kept[0].furniture.length, 3)
   assert.equal(state.street.length, 3)
+})
+
+test('sidewalk and street pieces sit on their own ground, not in a house', () => {
+  const lot = houseFootprint(0)
+  const sidewalk = placeOnLane('sidewalk', lot.minX, lot.z, [], 1)
+  assert.ok(sidewalk.x >= BLOCK.sidewalk.minX && sidewalk.x <= BLOCK.sidewalk.maxX)
+  assert.ok(sidewalk.x > lot.maxX)
+  const road = placeOnLane('street', 0, 1.2, [], 1)
+  assert.ok(road.x >= BLOCK.street.minX && road.x <= BLOCK.street.maxX)
+  const first = placeOnLane('sidewalk', 1.1, 2, [], 0)
+  const second = placeOnLane('sidewalk', 1.1, 2, [first], 0)
+  const dx = first.x - second.x
+  const dz = first.z - second.z
+  assert.ok(dx * dx + dz * dz > 1)
 })
 
 test('losing the second house does not erase the first house or the street', () => {

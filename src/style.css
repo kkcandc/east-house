@@ -135,6 +135,31 @@ button:disabled { opacity: 0.55; }
 .cards button span { display: block; font-weight: 500; font-size: 13px; }
 
 .catalog button, .move button { flex: 0 0 auto; }
+.move { display: block; }
+#walk { width: 100%; text-align: center; min-height: 56px; background: var(--gold); }
+
+.stick {
+  position: absolute;
+  z-index: 4;
+  left: 14px;
+  bottom: 210px;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  background: rgba(20, 16, 12, 0.42);
+  border: 2px solid rgba(246, 241, 232, 0.55);
+  pointer-events: auto;
+  touch-action: none;
+}
+.stick span {
+  position: absolute;
+  left: 30px;
+  top: 30px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--gold);
+}
 
 #strike {
   min-height: 64px;
