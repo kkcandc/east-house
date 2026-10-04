@@ -9,7 +9,7 @@ export function createWorld(canvas) {
   renderer.shadowMap.enabled = true
   renderer.shadowMap.type = THREE.PCFSoftShadowMap
   renderer.toneMapping = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 1.08
+  renderer.toneMappingExposure = 1.22
   renderer.outputColorSpace = THREE.SRGBColorSpace
 
   const scene = new THREE.Scene()
@@ -18,9 +18,9 @@ export function createWorld(canvas) {
   const camera = new THREE.PerspectiveCamera(68, 1, 0.08, 50)
   camera.rotation.order = 'YXZ'
 
-  const hemi = new THREE.HemisphereLight('#fff4e4', '#6d7c8a', 0.72)
+  const hemi = new THREE.HemisphereLight('#fff4e4', '#8ea0b0', 1.15)
   scene.add(hemi)
-  const sun = new THREE.DirectionalLight('#fff7ea', 1.35)
+  const sun = new THREE.DirectionalLight('#fff7ea', 1.7)
   sun.position.set(5, 10, 4)
   sun.castShadow = true
   sun.shadow.mapSize.set(1024, 1024)
@@ -84,7 +84,7 @@ export function createWorld(canvas) {
   }
 
   function applyCamera() {
-    const eye = state3.mode === 'street' ? 1.78 : EYE
+    const eye = state3.mode === 'street' ? 2.35 : EYE
     camera.position.set(state3.px, eye, state3.pz)
     camera.rotation.y = state3.yaw
     camera.rotation.x = state3.pitch
@@ -155,7 +155,7 @@ export function createWorld(canvas) {
     tree.position.set(0.4, 0, -d / 2 - 1.3)
     roomGroup.add(tree)
 
-    const bulb = new THREE.PointLight('#ffe0b8', 0.85, 9)
+    const bulb = new THREE.PointLight('#ffe0b8', 1.6, 12)
     bulb.position.set(0, h - 0.3, 0)
     const fixture = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.08, 12), mat('#f2c14e'))
     fixture.position.copy(bulb.position)
@@ -197,12 +197,12 @@ export function createWorld(canvas) {
     streetGroup.visible = true
     state3.floor = null
     buildStreet(game)
-    state3.bounds = { minX: -0.45, maxX: 0.85, minZ: -8.5, maxZ: 7.2 }
+    state3.bounds = { minX: -0.55, maxX: 1.35, minZ: -8.5, maxZ: 8.4 }
     if (reset) {
-      state3.px = 0.15
-      state3.pz = 7.15
-      state3.yaw = 0
-      state3.pitch = -0.16
+      state3.px = 0.45
+      state3.pz = 8.35
+      state3.yaw = 0.06
+      state3.pitch = -0.34
     }
   }
 
@@ -252,11 +252,16 @@ export function createWorld(canvas) {
   }
 
   function faceNico() {
-    if (!state3.nico) return
-    const dx = state3.nico.position.x - state3.px
-    const dz = state3.nico.position.z - state3.pz
+    if (!state3.nico || !state3.bounds) return
+    const dir = forward()
+    const { minX, maxX, minZ, maxZ } = state3.bounds
+    const x = clamp(state3.px + dir.x * 2.2, minX + 0.45, maxX - 0.45)
+    const z = clamp(state3.pz + dir.z * 2.2, minZ + 0.45, maxZ - 0.45)
+    state3.nico.position.set(x, 0, z)
+    const dx = x - state3.px
+    const dz = z - state3.pz
     state3.yaw = Math.atan2(-dx, -dz)
-    state3.pitch = -0.08
+    state3.pitch = -0.04
     applyCamera()
   }
 
@@ -373,6 +378,10 @@ export function createWorld(canvas) {
       streetGroup.add(dash)
     }
 
+    const fill = new THREE.DirectionalLight('#fff8ee', 1.25)
+    fill.position.set(1.5, 7, 12)
+    streetGroup.add(fill)
+
     game.kept.forEach((house, index) => {
       streetGroup.add(exteriorHouse(house, index))
     })
@@ -380,7 +389,8 @@ export function createWorld(canvas) {
     for (const piece of game.street) {
       const prop = streetProp(piece.kind)
       const onSidewalk = piece.lane === 'sidewalk'
-      prop.position.set(onSidewalk ? 0.2 : 0.95, 0, 4.85 - piece.slot * 1.7)
+      prop.position.set(onSidewalk ? 1.15 : 2.15, 0, 3.35 - piece.slot * 1.55)
+      prop.scale.setScalar(1.65)
       streetGroup.add(prop)
     }
 
@@ -590,8 +600,8 @@ function addLegs(group, material, spanX, spanZ) {
 function makeNico() {
   const group = new THREE.Group()
   const skin = mat('#f0c7a4', { roughness: 0.62 })
-  const shirt = mat('#2f6f62', { roughness: 0.58 })
-  const pants = mat('#2c2824', { roughness: 0.75 })
+  const shirt = mat('#3ecfb8', { roughness: 0.4, emissive: '#14685c', emissiveIntensity: 0.45 })
+  const pants = mat('#f2c14e', { roughness: 0.55 })
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 16), skin)
   head.position.y = 1.55
   const crown = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.16, 5), mat('#f2c14e'))
@@ -615,6 +625,7 @@ function makeNico() {
     }
   })
   group.userData.arms = { left: armL, right: armR }
+  group.scale.setScalar(1.25)
   return group
 }
 
@@ -630,10 +641,10 @@ function limb(material, x) {
 function exteriorHouse(house, index) {
   const spec = ROOMS[house.style]
   const group = new THREE.Group()
-  const width = house.style === 'skinny' ? 1.55 : house.style === 'shotgun' ? 2.15 : 2.55
+  const width = house.style === 'skinny' ? 1.35 : house.style === 'shotgun' ? 1.7 : 1.85
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(width, spec.h, 2.2),
-    mat(spec.exterior, { roughness: 0.88 }),
+    mat(spec.exterior, { roughness: 0.72, emissive: spec.exterior, emissiveIntensity: 0.28 }),
   )
   body.position.y = spec.h / 2
   body.castShadow = true
@@ -641,14 +652,14 @@ function exteriorHouse(house, index) {
   const roof = new THREE.Mesh(new THREE.BoxGeometry(width + 0.18, 0.16, 2.45), mat(spec.trim))
   roof.position.y = spec.h + 0.08
   const name = new THREE.Mesh(
-    new THREE.PlaneGeometry(Math.min(width * 0.92, 2.2), 0.38),
+    new THREE.PlaneGeometry(Math.min(width * 0.92, 2.2), 0.52),
     mat('#f6f1e8', { map: labelTexture(spec.name, '#f6f1e8', '#241c16'), roughness: 0.8 }),
   )
   name.position.set(0, spec.h * 0.62, 1.12)
   const windowPane = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.56), mat('#d5eef8', { emissive: '#9fd0ea', emissiveIntensity: 0.25 }))
   windowPane.position.set(0, spec.h * 0.38, 1.12)
   group.add(body, roof, name, windowPane)
-  group.position.set(-1.15, 0, 2.55 - index * 3.55)
+  group.position.set(-0.85, 0, 2.5 - index * 3.8)
   return group
 }
 
@@ -656,16 +667,21 @@ function streetProp(kind) {
   const group = new THREE.Group()
   if (kind === 'bike') {
     const tire = mat('#241c16')
-    const metal = mat('#1f7a72', { metalness: 0.45, roughness: 0.3 })
-    for (const x of [-0.36, 0.36]) {
-      const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.03, 8, 18), tire)
+    const metal = mat('#f2c14e', { metalness: 0.2, roughness: 0.4 })
+    for (const x of [-0.48, 0.48]) {
+      const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.06, 10, 20), tire)
       wheel.rotation.y = Math.PI / 2
-      wheel.position.set(x, 0.22, 0)
+      wheel.position.set(x, 0.38, 0)
       group.add(wheel)
     }
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.04, 0.04), metal)
-    frame.position.y = 0.32
-    group.add(frame)
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.08, 0.08), metal)
+    frame.position.y = 0.55
+    const sign = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.7, 0.28),
+      mat('#f6f1e8', { map: labelTexture('Bikes', '#f6f1e8', '#241c16', 64) }),
+    )
+    sign.position.set(0, 0.95, 0.08)
+    group.add(frame, sign)
   } else if (kind === 'mural') {
     const wall = new THREE.Mesh(
       new THREE.BoxGeometry(1.35, 1.55, 0.12),

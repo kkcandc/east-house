@@ -86,7 +86,7 @@ function paint() {
   grow.classList.toggle('hidden', state.screen !== 'kept')
   strike.classList.toggle('hidden', state.screen !== 'fight')
   place.classList.toggle('hidden', state.screen !== 'decorate' && state.screen !== 'street')
-  move.classList.toggle('hidden', state.screen === 'fight')
+  move.classList.toggle('hidden', state.screen === 'fight' || state.screen === 'street')
   nextHouses.classList.toggle('hidden', state.screen !== 'street')
   catalog.classList.toggle('hidden', state.screen !== 'decorate' && state.screen !== 'street')
 
@@ -185,7 +185,7 @@ function beginRound() {
       state = reduce(state, 'whiff')
       world.mood = 'idle'
       afterChange()
-    }, 2200)
+    }, 4500)
   }, 650)
 }
 
