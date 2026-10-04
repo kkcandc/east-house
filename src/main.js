@@ -111,9 +111,11 @@ function paint() {
     status.textContent = `${house.name} stays decorated. Walk around, then add the sidewalk and the street.`
   } else if (state.screen === 'street') {
     const names = state.street.map((piece) => STREET_PIECES.find((item) => item.id === piece.kind)?.name)
-    status.textContent = streetReady(state)
-      ? `On the block: ${names.join(', ')}. Choose the next house.`
-      : 'Place something on the sidewalk and something in the street. Then choose the next house.'
+    status.textContent = names.length === 0
+      ? 'Place something on the sidewalk and something in the street. Then choose the next house.'
+      : streetReady(state)
+        ? `On the block: ${names.join(', ')}. Choose the next house.`
+        : `On the block: ${names.join(', ')}. Add both a sidewalk piece and a street piece.`
   } else if (state.screen === 'fight' && state.fight) {
     const ready = state.fight.open
     status.textContent = ready

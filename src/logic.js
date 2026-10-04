@@ -46,10 +46,10 @@ export const FURNITURE = [
 
 export const STREET_PIECES = [
   { id: 'bike', name: 'Sidewalk bike', lane: 'sidewalk' },
+  { id: 'corner', name: 'Five Points corner', lane: 'street' },
   { id: 'mural', name: 'Mural wall', lane: 'sidewalk' },
   { id: 'bench', name: 'Shelby Park bench', lane: 'sidewalk' },
   { id: 'tabla', name: 'Tabla Rasa Toy Store', lane: 'sidewalk' },
-  { id: 'corner', name: 'Five Points corner', lane: 'street' },
   { id: 'lamppost', name: 'Street lamp', lane: 'street' },
 ]
 
